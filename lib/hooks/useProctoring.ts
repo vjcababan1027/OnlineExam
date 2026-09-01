@@ -26,34 +26,56 @@ export function useProctoring({
 
     const triggerViolation = (type: ViolationType, details?: string) => {
       const now = Date.now();
-      // Debounce threshold (1.5 seconds) to prevent multiple identical events triggering at once
-      if (now - lastViolationTime.current > 1500) {
+      // Debounce threshold (1.2 seconds) to avoid duplicate simultaneous events
+      if (now - lastViolationTime.current > 1200) {
         lastViolationTime.current = now;
         onViolationRef.current(type, details);
       }
     };
 
-    // 1. Visibility Change (Tab switch / minimized window)
+    // 1. Visibility Change (Tab switch or window minimized)
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        triggerViolation('TAB_SWITCH', 'Student switched tabs or minimized the browser window');
+        triggerViolation('TAB_SWITCH', 'Switched browser tab or minimized window');
       }
     };
 
-    // 2. Window Blur (Focus loss / other app clicked)
+    // 2. Window Blur (Lost focus / switched to another application)
     const handleWindowBlur = () => {
-      triggerViolation('WINDOW_BLUR', 'Student clicked outside the exam window or switched applications');
+      triggerViolation('WINDOW_BLUR', 'Focus lost: clicked outside the browser window or switched apps');
     };
 
     // 3. Fullscreen Change
     const handleFullscreenChange = () => {
       if (requireFullscreen && !document.fullscreenElement) {
-        triggerViolation('FULLSCREEN_EXIT', 'Student exited fullscreen mode during the exam');
+        triggerViolation('FULLSCREEN_EXIT', 'Exited fullscreen examination mode');
+      }
+    };
+
+    // 4. Prevent Context Menu (right click inspect)
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      triggerViolation('WINDOW_BLUR', 'Right-click context menu attempted');
+    };
+
+    // 5. Prevent shortcut keys like F12, Ctrl+Shift+I, Alt+Tab detection
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // F12 or Ctrl+Shift+I (DevTools)
+      if (
+        e.key === 'F12' ||
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j' || e.key === 'C' || e.key === 'c')) ||
+        ((e.ctrlKey || e.metaKey) && (e.key === 'u' || e.key === 'U'))
+      ) {
+        e.preventDefault();
+        triggerViolation('WINDOW_BLUR', 'Developer tools / inspect shortcut attempted');
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleWindowBlur);
+    document.addEventListener('contextmenu', handleContextMenu);
+    window.addEventListener('keydown', handleKeyDown);
+
     if (requireFullscreen) {
       document.addEventListener('fullscreenchange', handleFullscreenChange);
     }
@@ -61,6 +83,9 @@ export function useProctoring({
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleWindowBlur);
+      document.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('keydown', handleKeyDown);
+
       if (requireFullscreen) {
         document.removeEventListener('fullscreenchange', handleFullscreenChange);
       }

@@ -21,7 +21,9 @@ import {
   ArrowRight, 
   Sparkles,
   Lock,
-  GraduationCap
+  GraduationCap,
+  FastForward,
+  HelpCircle
 } from 'lucide-react';
 
 export default function ExamRunnerPage({
@@ -40,7 +42,7 @@ export default function ExamRunnerPage({
   const [selectedOption, setSelectedOption] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [violationAlert, setViolationAlert] = useState<{ type: string; count: number; deduction: number } | null>(null);
+  const [violationAlert, setViolationAlert] = useState<{ type: string; count: number; deduction: number; details?: string } | null>(null);
 
   // Time used tracker for current question
   const questionStartTime = useRef<number>(Date.now());
@@ -87,14 +89,15 @@ export default function ExamRunnerPage({
     init();
   }, [attemptId, router]);
 
-  // Handle Question Submission (Manual or Auto on 00:00)
+  // Handle Question Submission (Manual, Skip, or Auto on 00:00)
   const submitCurrentAnswer = useCallback(
-    async (isAutoSubmit = false) => {
+    async (isAutoSubmit = false, isSkipped = false) => {
       if (submitting || !exam || questions.length === 0) return;
       setSubmitting(true);
 
       const currentQ = questions[currentIndex];
       const timeUsedSeconds = Math.round((Date.now() - questionStartTime.current) / 1000);
+      const answerToRecord = isSkipped ? '' : (selectedOption || '');
 
       try {
         // Record answer
@@ -102,7 +105,7 @@ export default function ExamRunnerPage({
           attemptId,
           currentQ.id,
           currentQ.number,
-          selectedOption || '',
+          answerToRecord,
           timeUsedSeconds
         );
 
@@ -167,10 +170,14 @@ export default function ExamRunnerPage({
         const result = await logExamViolation(attemptId, attempt.studentId, type, details);
         const deduction = (exam?.violationDeduction || 1) * result.violationCount;
 
+        // Update local attempt count
+        setAttempt(prev => prev ? { ...prev, violationCount: result.violationCount } : prev);
+
         setViolationAlert({
           type,
           count: result.violationCount,
           deduction,
+          details
         });
 
         // If threshold reached, auto lock exam
@@ -224,8 +231,17 @@ export default function ExamRunnerPage({
             </h1>
           </div>
 
-          {/* Timer Badge */}
-          <div className="flex items-center gap-3">
+          {/* Timer & Violation HUD */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Live Violation Badge */}
+            {(attempt?.violationCount || 0) > 0 && (
+              <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-bold font-mono animate-pulse">
+                <ShieldAlert className="h-3.5 w-3.5 text-rose-400" />
+                <span>Violations: {attempt?.violationCount || 0}/{exam.maxViolations}</span>
+              </div>
+            )}
+
+            {/* Timer Badge */}
             <div
               className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl font-mono text-sm sm:text-base font-bold border transition-all ${
                 isUrgent
@@ -250,28 +266,52 @@ export default function ExamRunnerPage({
         </div>
       </header>
 
-      {/* Violation Alert Modal / Toast */}
+      {/* Full-Screen Violation Warning Modal */}
       {violationAlert && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 max-w-md w-full px-4 animate-slide-up">
-          <div className="p-4 rounded-2xl bg-rose-950/95 border-2 border-rose-500 text-white shadow-2xl backdrop-blur-xl space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="font-bold text-sm flex items-center gap-1.5 text-rose-300">
-                <ShieldAlert className="h-4 w-4 text-rose-400" />
-                Anti-Cheat Violation Recorded
-              </span>
-              <button
-                onClick={() => setViolationAlert(null)}
-                className="text-xs text-slate-400 hover:text-white px-2 py-0.5 rounded bg-black/40"
-              >
-                Dismiss
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in">
+          <div className="max-w-md w-full p-6 sm:p-7 rounded-2xl bg-[#130d1e] border-2 border-rose-500 text-white shadow-2xl space-y-5 text-center">
+            <div className="h-16 w-16 mx-auto rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/40 animate-pulse">
+              <ShieldAlert className="h-9 w-9" />
             </div>
-            <p className="text-xs text-rose-100">
-              Browser focus loss or tab switch detected ({violationAlert.type}). Violation #{violationAlert.count} of {exam.maxViolations}.
+
+            <div className="space-y-1.5">
+              <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                PROCTORING ALERT
+              </span>
+              <h3 className="text-xl font-extrabold text-white">
+                Anti-Cheat Rule Violation Detected
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {violationAlert.details || 'A browser focus loss, tab switch, or minimize event was detected during the exam.'}
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-rose-950/60 border border-rose-500/30 text-xs space-y-2 text-left">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-300">Violation Strike:</span>
+                <span className="text-rose-400 font-mono font-bold text-sm">
+                  Strike #{violationAlert.count} of {exam.maxViolations}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-300">Grade Penalty:</span>
+                <span className="text-rose-400 font-mono font-bold">
+                  -{violationAlert.deduction} pt(s) from final score
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-amber-300/90 font-medium bg-amber-500/10 p-2.5 rounded-lg border border-amber-500/20">
+              ⚠️ If you reach {exam.maxViolations} violations, your examination will be locked immediately and submitted automatically.
             </p>
-            <p className="text-[11px] font-mono text-rose-300">
-              Total penalty: -{violationAlert.deduction} point(s) from final grade.
-            </p>
+
+            <button
+              type="button"
+              onClick={() => setViolationAlert(null)}
+              className="w-full py-3.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm shadow-lg shadow-rose-600/30 transition-all"
+            >
+              I Understand — Return to Exam
+            </button>
           </div>
         </div>
       )}
@@ -345,28 +385,47 @@ export default function ExamRunnerPage({
         </div>
 
         {/* Bottom Submission Action */}
-        <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between gap-4">
-          <span className="text-xs text-slate-500 font-medium">
-            ⚠️ No back navigation permitted after submission.
+        <div className="pt-4 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <span className="text-xs text-slate-500 font-medium order-2 sm:order-1">
+            ⚠️ No back navigation permitted after moving to the next question.
           </span>
 
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={() => submitCurrentAnswer(false)}
-            className="flex items-center gap-2 py-3.5 px-8 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-sm shadow-xl shadow-indigo-600/25 transition-all disabled:opacity-50"
-          >
-            {submitting ? (
-              'Submitting...'
-            ) : currentIndex + 1 === totalQ ? (
-              'Submit Final Question & Finish Exam'
-            ) : (
-              <>
-                <span>Submit & Next Question</span>
-                <ArrowRight className="h-4 w-4" />
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-end order-1 sm:order-2">
+            {/* Skip Question Button */}
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => {
+                if (confirm('Skip this question? No points will be awarded and you cannot return to it.')) {
+                  submitCurrentAnswer(false, true);
+                }
+              }}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-3.5 px-5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs sm:text-sm font-semibold transition-all disabled:opacity-50"
+              title="Skip this question without answering"
+            >
+              <FastForward className="h-4 w-4 text-amber-400" />
+              <span>Skip Question</span>
+            </button>
+
+            {/* Submit & Next Button (Requires selection) */}
+            <button
+              type="button"
+              disabled={submitting || !selectedOption}
+              onClick={() => submitCurrentAnswer(false, false)}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 py-3.5 px-6 sm:px-8 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs sm:text-sm shadow-xl shadow-indigo-600/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {submitting ? (
+                'Submitting...'
+              ) : currentIndex + 1 === totalQ ? (
+                'Submit Final Answer & Finish Exam'
+              ) : (
+                <>
+                  <span>Submit Answer</span>
+                  <ArrowRight className="h-4 w-4" />
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </main>
     </div>
