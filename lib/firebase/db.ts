@@ -673,9 +673,10 @@ export async function finishExamAttempt(attemptId: string): Promise<Attempt> {
     const totalDeduction = (att.violationCount || 0) * deductionPerViolation;
     const finalScore = Math.max(0, rawScore - totalDeduction);
     const percentage = maxScore > 0 ? Math.round((finalScore / maxScore) * 100) : 0;
+    const isLocked = (att.violationCount || 0) >= (exam.maxViolations || 3);
 
     const updatedData = {
-      status: 'SUBMITTED' as const,
+      status: (isLocked ? 'LOCKED' : 'SUBMITTED') as 'LOCKED' | 'SUBMITTED',
       finishedAt: now,
       rawScore,
       maxScore,
@@ -719,8 +720,9 @@ export async function finishExamAttempt(attemptId: string): Promise<Attempt> {
     const totalDeduction = (att.violationCount || 0) * deductionPerViolation;
     const finalScore = Math.max(0, rawScore - totalDeduction);
     const percentage = maxScore > 0 ? Math.round((finalScore / maxScore) * 100) : 0;
+    const isLocked = (att.violationCount || 0) >= (exam?.maxViolations || 3);
 
-    att.status = 'SUBMITTED';
+    att.status = isLocked ? 'LOCKED' : 'SUBMITTED';
     att.finishedAt = now;
     att.rawScore = rawScore;
     att.maxScore = maxScore;

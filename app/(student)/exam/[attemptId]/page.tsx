@@ -164,14 +164,35 @@ export default function ExamRunnerPage({
   // Proctoring & Anti-Cheat Violation Handler
   const handleViolation = useCallback(
     async (type: ViolationType, details?: string) => {
-      if (!attempt || attempt.status === 'SUBMITTED') return;
+      if (!attempt || attempt.status === 'SUBMITTED' || attempt.status === 'LOCKED') return;
 
       try {
         const result = await logExamViolation(attemptId, attempt.studentId, type, details);
+        const maxAllowed = exam?.maxViolations || 3;
+        const isExceeded = result.shouldLock || result.violationCount >= maxAllowed;
         const deduction = (exam?.violationDeduction || 1) * result.violationCount;
 
         // Update local attempt count
         setAttempt(prev => prev ? { ...prev, violationCount: result.violationCount } : prev);
+
+        // If threshold reached, auto lock and submit exam immediately
+        if (isExceeded) {
+          try {
+            const completed = await finishExamAttempt(attemptId);
+            sessionStorage.setItem('FINISHED_ATTEMPT', JSON.stringify(completed));
+          } catch (finishErr) {
+            console.error('Error in finishExamAttempt on lock:', finishErr);
+            sessionStorage.setItem('FINISHED_ATTEMPT', JSON.stringify({
+              ...attempt,
+              status: 'LOCKED',
+              violationCount: result.violationCount,
+              finalScore: Math.max(0, (attempt.rawScore || 0) - deduction)
+            }));
+          }
+          sessionStorage.setItem('FINISHED_EXAM', JSON.stringify(exam));
+          router.push('/exam/complete');
+          return;
+        }
 
         setViolationAlert({
           type,
@@ -179,14 +200,6 @@ export default function ExamRunnerPage({
           deduction,
           details
         });
-
-        // If threshold reached, auto lock exam
-        if (result.shouldLock) {
-          const completed = await finishExamAttempt(attemptId);
-          sessionStorage.setItem('FINISHED_ATTEMPT', JSON.stringify(completed));
-          sessionStorage.setItem('FINISHED_EXAM', JSON.stringify(exam));
-          router.push('/exam/complete');
-        }
       } catch (e) {
         console.error('Violation logging error:', e);
       }
@@ -194,10 +207,10 @@ export default function ExamRunnerPage({
     [attempt, attemptId, exam, router]
   );
 
-  useProctoring({
+  const { requestFullscreen } = useProctoring({
     enabled: !loading && attempt?.status === 'IN_PROGRESS',
     onViolation: handleViolation,
-    requireFullscreen: false,
+    requireFullscreen: true,
   });
 
   if (loading || !exam || questions.length === 0) {
@@ -307,10 +320,13 @@ export default function ExamRunnerPage({
 
             <button
               type="button"
-              onClick={() => setViolationAlert(null)}
+              onClick={() => {
+                setViolationAlert(null);
+                requestFullscreen();
+              }}
               className="w-full py-3.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-sm shadow-lg shadow-rose-600/30 transition-all"
             >
-              I Understand — Return to Exam
+              I Understand — Return to Fullscreen Exam
             </button>
           </div>
         </div>
@@ -348,7 +364,12 @@ export default function ExamRunnerPage({
                   <button
                     key={key}
                     type="button"
-                    onClick={() => setSelectedOption(key)}
+                    onClick={() => {
+                      setSelectedOption(key);
+                      if (!document.fullscreenElement) {
+                        requestFullscreen();
+                      }
+                    }}
                     className={`w-full p-4 rounded-xl border text-left transition-all flex items-center justify-between group ${
                       isSelected
                         ? 'bg-indigo-600/25 border-indigo-500 text-white shadow-lg shadow-indigo-600/10 ring-1 ring-indigo-500'
@@ -391,15 +412,11 @@ export default function ExamRunnerPage({
           </span>
 
           <div className="flex items-center gap-3 w-full sm:w-auto justify-end order-1 sm:order-2">
-            {/* Skip Question Button */}
+            {/* Skip Question Button (No prompt alert) */}
             <button
               type="button"
               disabled={submitting}
-              onClick={() => {
-                if (confirm('Skip this question? No points will be awarded and you cannot return to it.')) {
-                  submitCurrentAnswer(false, true);
-                }
-              }}
+              onClick={() => submitCurrentAnswer(false, true)}
               className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-3.5 px-5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs sm:text-sm font-semibold transition-all disabled:opacity-50"
               title="Skip this question without answering"
             >

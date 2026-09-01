@@ -51,24 +51,16 @@ service cloud.firestore {
 
     // Attempts Collection
     match /attempts/{attemptId} {
-      // Students can read their own attempt, teacher can read for their exam
-      allow read: if true;
-      
-      // Attempt creation and initial submission
-      allow create: if true;
-      allow update: if request.resource.data.diff(resource.data).affectedKeys()
-                        .hasOnly(['answersSubmitted', 'currentQuestionIndex', 'updatedAt']);
+      allow read, write: if true;
 
       // Student individual answers
       match /answers/{questionId} {
-        allow read: if true;
-        allow create, update: if true;
+        allow read, write: if true;
       }
 
       // Proctoring violations
       match /violations/{violationId} {
-        allow read: if true;
-        allow create: if true;
+        allow read, write: if true;
       }
     }
 
