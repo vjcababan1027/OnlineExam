@@ -140,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         // Local mode login
         const teacherProfile: UserProfile = {
-          uid: email === 'teacher@example.com' ? 'teacher-101' : `teacher_${Date.now()}`,
+          uid: `teacher_${Date.now()}`,
           email,
           fullName,
           role: 'teacher',
