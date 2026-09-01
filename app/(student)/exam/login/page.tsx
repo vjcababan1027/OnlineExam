@@ -17,8 +17,8 @@ import {
 
 export default function StudentLoginPage() {
   const router = useRouter();
-  const [examCode, setExamCode] = useState('CP-MID-2026');
-  const [studentId, setStudentId] = useState('2026-001');
+  const [examCode, setExamCode] = useState('');
+  const [studentId, setStudentId] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -134,9 +134,7 @@ export default function StudentLoginPage() {
                 </button>
               </form>
 
-              {/* Demo Helper */}
-              <div className="pt-2 text-center text-xs text-slate-500 space-y-1">
-                <p>Default Demo: Code <code className="text-amber-300 font-mono">CP-MID-2026</code> • ID <code className="text-emerald-300 font-mono">2026-001</code></p>
+              <div className="pt-2 text-center text-xs text-slate-500">
                 <p>
                   Teacher wanting to create exams?{' '}
                   <Link href="/teacher/login" className="text-indigo-400 hover:underline">

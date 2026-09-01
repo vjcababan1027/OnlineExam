@@ -10,9 +10,9 @@ export default function TeacherLoginPage() {
   const router = useRouter();
   const { loginAsTeacher, registerTeacher } = useAuth();
   const [isRegister, setIsRegister] = useState(false);
-  const [email, setEmail] = useState('teacher@example.com');
-  const [fullName, setFullName] = useState('Prof. Juan Dela Cruz');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -161,19 +161,6 @@ export default function TeacherLoginPage() {
                   className="text-slate-400 hover:text-white"
                 >
                   {isRegister ? 'Already have an account? Sign in' : 'Need an account? Register here'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsRegister(false);
-                    setEmail('teacher@example.com');
-                    setFullName('Prof. Juan Dela Cruz');
-                    setPassword('password123');
-                  }}
-                  className="text-indigo-400 hover:text-indigo-300 font-medium"
-                >
-                  Fill Demo
                 </button>
               </div>
             </div>

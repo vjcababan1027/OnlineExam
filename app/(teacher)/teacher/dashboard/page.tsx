@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { Navbar } from '@/components/shared/Navbar';
-import { getTeacherExams, updateExam, resetMockData } from '@/lib/firebase/db';
+import { getTeacherExams, updateExam } from '@/lib/firebase/db';
 import { Exam, ExamStatus } from '@/lib/types';
 import { 
   Plus, 
@@ -19,8 +19,7 @@ import {
   Layers, 
   CheckCircle2, 
   Sparkles,
-  ArrowUpRight,
-  RotateCcw
+  ArrowUpRight
 } from 'lucide-react';
 
 export default function TeacherDashboardPage() {
@@ -40,13 +39,7 @@ export default function TeacherDashboardPage() {
       if (!user) return;
       try {
         const list = await getTeacherExams(user.uid);
-        // If empty, also check demo-exam-01
-        if (list.length === 0) {
-          const allExams = await getTeacherExams('teacher-101');
-          setExams(allExams);
-        } else {
-          setExams(list);
-        }
+        setExams(list);
       } catch (e) {
         console.error(e);
       } finally {
@@ -65,18 +58,6 @@ export default function TeacherDashboardPage() {
       setTimeout(() => setActionMsg(null), 3000);
     } catch (e) {
       console.error(e);
-    }
-  };
-
-  const handleResetSeed = async () => {
-    if (confirm('Restore preloaded demo exam data and rosters?')) {
-      await resetMockData();
-      if (user) {
-        const list = await getTeacherExams(user.uid);
-        setExams(list.length ? list : await getTeacherExams('teacher-101'));
-      }
-      setActionMsg('Preloaded demo exam restored successfully!');
-      setTimeout(() => setActionMsg(null), 3000);
     }
   };
 
@@ -111,15 +92,6 @@ export default function TeacherDashboardPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={handleResetSeed}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
-              title="Reset mock test data"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              Reset Demo Data
-            </button>
-
             <Link
               href="/teacher/exams/create"
               className="flex items-center gap-2 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/25 transition-all"

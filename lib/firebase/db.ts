@@ -70,104 +70,12 @@ function saveMockDb(data: MockDatabase) {
 }
 
 function getInitialSeedData(): MockDatabase {
-  const sampleExamId = 'demo-exam-01';
-  const sampleTeacherUid = 'teacher-101';
-
   return {
-    users: {
-      [sampleTeacherUid]: {
-        uid: sampleTeacherUid,
-        email: 'teacher@example.com',
-        fullName: 'Prof. Juan Dela Cruz',
-        role: 'teacher',
-        active: true,
-      }
-    },
-    exams: {
-      [sampleExamId]: {
-        id: sampleExamId,
-        teacherUid: sampleTeacherUid,
-        title: 'Midterm Examination in Computer Programming',
-        course: 'CS 101 - Introduction to Programming',
-        section: 'BSIT 1A',
-        examCode: 'CP-MID-2026',
-        timerMode: 'per_question',
-        timerSeconds: 45,
-        randomizeQuestions: false,
-        randomizeChoices: false,
-        violationDeduction: 1,
-        maxViolations: 3,
-        retakePolicy: 'ONE_ATTEMPT',
-        status: 'OPEN',
-        totalPoints: 5,
-        questionCount: 5,
-        studentCount: 4,
-        showScoreImmediately: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }
-    },
-    examStudents: {
-      [sampleExamId]: {
-        '2026-001': { studentId: '2026-001', fullName: 'Juan Dela Cruz', eligible: true, addedAt: new Date().toISOString() },
-        '2026-002': { studentId: '2026-002', fullName: 'Maria Santos', eligible: true, addedAt: new Date().toISOString() },
-        '2026-003': { studentId: '2026-003', fullName: 'Pedro Garcia', eligible: true, addedAt: new Date().toISOString() },
-        '2026-004': { studentId: '2026-004', fullName: 'Ana Reyes', eligible: true, addedAt: new Date().toISOString() },
-      }
-    },
-    questions: {
-      [sampleExamId]: {
-        'q1': {
-          id: 'q1',
-          number: 1,
-          type: 'MCQ',
-          questionText: 'Which keyword is used to declare a constant in modern JavaScript?',
-          options: { A: 'var', B: 'let', C: 'const', D: 'constant' },
-          points: 1
-        },
-        'q2': {
-          id: 'q2',
-          number: 2,
-          type: 'MCQ',
-          questionText: 'Which symbol ends a statement in C and Java?',
-          options: { A: ':', B: ';', C: '.', D: ',' },
-          points: 1
-        },
-        'q3': {
-          id: 'q3',
-          number: 3,
-          type: 'MCQ',
-          questionText: 'What is the output of typeof null in JavaScript?',
-          options: { A: '"null"', B: '"undefined"', C: '"object"', D: '"boolean"' },
-          points: 1
-        },
-        'q4': {
-          id: 'q4',
-          number: 4,
-          type: 'MCQ',
-          questionText: 'Which data structure operates on a Last-In, First-Out (LIFO) basis?',
-          options: { A: 'Queue', B: 'Stack', C: 'Array', D: 'Binary Tree' },
-          points: 1
-        },
-        'q5': {
-          id: 'q5',
-          number: 5,
-          type: 'MCQ',
-          questionText: 'In HTML5, which tag is used for semantic navigation links?',
-          options: { A: '<menu>', B: '<nav>', C: '<links>', D: '<navigate>' },
-          points: 1
-        }
-      }
-    },
-    answerKeys: {
-      [sampleExamId]: {
-        'q1': { questionId: 'q1', answer: 'C', points: 1 },
-        'q2': { questionId: 'q2', answer: 'B', points: 1 },
-        'q3': { questionId: 'q3', answer: 'C', points: 1 },
-        'q4': { questionId: 'q4', answer: 'B', points: 1 },
-        'q5': { questionId: 'q5', answer: 'B', points: 1 },
-      }
-    },
+    users: {},
+    exams: {},
+    examStudents: {},
+    questions: {},
+    answerKeys: {},
     attempts: {},
     answers: {},
     violations: {},
@@ -838,8 +746,3 @@ export async function getExamResultsWithDetails(examId: string) {
   };
 }
 
-export async function resetMockData() {
-  const initial = getInitialSeedData();
-  saveMockDb(initial);
-  return initial;
-}

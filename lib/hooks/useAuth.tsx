@@ -87,22 +87,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return () => unsubscribe();
     } else {
-      // 2. Local Demo Storage Mode
+      // Local Storage Mode (Firebase not configured)
       try {
         const stored = localStorage.getItem(AUTH_STORAGE_KEY);
         if (stored) {
           setUser(JSON.parse(stored));
-        } else {
-          // Preloaded demo instructor session
-          const demoTeacher: UserProfile = {
-            uid: 'teacher-101',
-            email: 'teacher@example.com',
-            fullName: 'Prof. Juan Dela Cruz',
-            role: 'teacher',
-            active: true,
-          };
-          setUser(demoTeacher);
-          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(demoTeacher));
         }
       } catch (e) {
         console.error(e);
