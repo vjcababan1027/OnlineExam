@@ -10,7 +10,8 @@ import {
   onSnapshot,
   serverTimestamp,
   writeBatch,
-  increment
+  increment,
+  deleteDoc
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './config';
 import {
@@ -132,6 +133,65 @@ export async function updateExam(examId: string, updates: Partial<Exam>): Promis
       };
       saveMockDb(mock);
     }
+  }
+}
+
+export async function deleteExam(examId: string): Promise<void> {
+  if (isFirebaseConfigured && db) {
+    // 1. Delete students subcollection
+    const studentsSnap = await getDocs(collection(db, 'exams', examId, 'students'));
+    const studentBatch = writeBatch(db);
+    studentsSnap.docs.forEach(d => studentBatch.delete(d.ref));
+    if (!studentsSnap.empty) await studentBatch.commit();
+
+    // 2. Delete questions subcollection
+    const questionsSnap = await getDocs(collection(db, 'exams', examId, 'questions'));
+    const questionBatch = writeBatch(db);
+    questionsSnap.docs.forEach(d => questionBatch.delete(d.ref));
+    if (!questionsSnap.empty) await questionBatch.commit();
+
+    // 3. Delete answerKeys subcollection
+    const answerKeysSnap = await getDocs(collection(db, 'exams', examId, 'answerKeys'));
+    const answerKeyBatch = writeBatch(db);
+    answerKeysSnap.docs.forEach(d => answerKeyBatch.delete(d.ref));
+    if (!answerKeysSnap.empty) await answerKeyBatch.commit();
+
+    // 4. Delete related attempts
+    const attemptsSnap = await getDocs(query(collection(db, 'attempts'), where('examId', '==', examId)));
+    for (const attDoc of attemptsSnap.docs) {
+      // delete subcollections for attempt
+      const answersSnap = await getDocs(collection(db, 'attempts', attDoc.id, 'answers'));
+      const aBatch = writeBatch(db);
+      answersSnap.docs.forEach(d => aBatch.delete(d.ref));
+      if (!answersSnap.empty) await aBatch.commit();
+
+      const violationsSnap = await getDocs(collection(db, 'attempts', attDoc.id, 'violations'));
+      const vBatch = writeBatch(db);
+      violationsSnap.docs.forEach(d => vBatch.delete(d.ref));
+      if (!violationsSnap.empty) await vBatch.commit();
+
+      await deleteDoc(attDoc.ref);
+    }
+
+    // 5. Delete the exam document
+    await deleteDoc(doc(db, 'exams', examId));
+  } else {
+    const mock = loadMockDb();
+    delete mock.exams[examId];
+    delete mock.examStudents[examId];
+    delete mock.questions[examId];
+    delete mock.answerKeys[examId];
+
+    // clean attempts
+    Object.keys(mock.attempts).forEach(attId => {
+      if (mock.attempts[attId].examId === examId) {
+        delete mock.attempts[attId];
+        delete mock.answers[attId];
+        delete mock.violations[attId];
+      }
+    });
+
+    saveMockDb(mock);
   }
 }
 

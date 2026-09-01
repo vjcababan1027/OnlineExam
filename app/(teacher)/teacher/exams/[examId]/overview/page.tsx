@@ -4,7 +4,7 @@ import { useState, useEffect, use } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Navbar } from '@/components/shared/Navbar';
-import { getExam, updateExam, getExamStudents, getExamQuestions } from '@/lib/firebase/db';
+import { getExam, updateExam, getExamStudents, getExamQuestions, deleteExam } from '@/lib/firebase/db';
 import { Exam, ExamStatus, ExamStudent, Question } from '@/lib/types';
 import { 
   ArrowLeft, 
@@ -18,7 +18,9 @@ import {
   Settings, 
   Copy, 
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 
 export default function ExamOverviewPage({ params }: { params: Promise<{ examId: string }> }) {
@@ -70,6 +72,20 @@ export default function ExamOverviewPage({ params }: { params: Promise<{ examId:
     navigator.clipboard.writeText(exam.examCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDelete = async () => {
+    if (!exam) return;
+    if (!confirm(`Are you sure you want to permanently delete "${exam.title}"? All enrolled student rosters, questions, and attempt results will be erased.`)) {
+      return;
+    }
+    try {
+      await deleteExam(exam.id);
+      router.push('/teacher/dashboard');
+    } catch (e) {
+      console.error('Failed to delete exam:', e);
+      alert('Failed to delete exam. Please try again.');
+    }
   };
 
   if (loading) {
@@ -263,6 +279,29 @@ export default function ExamOverviewPage({ params }: { params: Promise<{ examId:
               </div>
               <span className="text-xs text-slate-500">Ready</span>
             </div>
+          </div>
+        </div>
+
+        {/* Danger Zone */}
+        <div className="glass-card rounded-2xl p-6 space-y-4 border-rose-500/20 bg-rose-950/10">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h3 className="text-sm font-bold text-rose-300 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-rose-400" />
+                Danger Zone
+              </h3>
+              <p className="text-xs text-slate-400">
+                Permanently delete this exam along with its enrolled rosters, questions, and student attempts. This action cannot be undone.
+              </p>
+            </div>
+
+            <button
+              onClick={handleDelete}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-semibold transition-all shrink-0"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete Exam
+            </button>
           </div>
         </div>
       </main>

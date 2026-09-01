@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { Navbar } from '@/components/shared/Navbar';
-import { getTeacherExams, updateExam } from '@/lib/firebase/db';
+import { getTeacherExams, updateExam, deleteExam } from '@/lib/firebase/db';
 import { Exam, ExamStatus } from '@/lib/types';
 import { 
   Plus, 
@@ -19,7 +19,8 @@ import {
   Layers, 
   CheckCircle2, 
   Sparkles,
-  ArrowUpRight
+  ArrowUpRight,
+  Trash2
 } from 'lucide-react';
 
 export default function TeacherDashboardPage() {
@@ -58,6 +59,21 @@ export default function TeacherDashboardPage() {
       setTimeout(() => setActionMsg(null), 3000);
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleDeleteExam = async (examId: string, examTitle: string) => {
+    if (!confirm(`Are you sure you want to permanently delete "${examTitle}"? This will delete all student records, questions, and test results for this exam.`)) {
+      return;
+    }
+    try {
+      await deleteExam(examId);
+      setExams(prev => prev.filter(e => e.id !== examId));
+      setActionMsg(`Exam "${examTitle}" has been permanently deleted.`);
+      setTimeout(() => setActionMsg(null), 3000);
+    } catch (e) {
+      console.error('Failed to delete exam:', e);
+      alert('Failed to delete exam. Please try again.');
     }
   };
 
@@ -255,6 +271,14 @@ export default function TeacherDashboardPage() {
                       >
                         <ArrowUpRight className="h-4 w-4" />
                       </Link>
+
+                      <button
+                        onClick={() => handleDeleteExam(exam.id, exam.title)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                        title="Delete Exam"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   </div>
                 </div>
