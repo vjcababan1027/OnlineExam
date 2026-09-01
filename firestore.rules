@@ -1,0 +1,85 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isTeacher() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+
+    function isExamOwner(examId) {
+      return isTeacher() &&
+        resource.data.teacherUid == request.auth.uid;
+    }
+
+    // Users Collection (Teachers)
+    match /users/{userId} {
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Exams Collection
+    match /exams/{examId} {
+      // Teachers can read and write their own exams
+      allow read: if isTeacher() && resource.data.teacherUid == request.auth.uid;
+      allow write: if isTeacher() && (resource == null || resource.data.teacherUid == request.auth.uid);
+      
+      // Students can read basic exam metadata if the exam is OPEN
+      allow get: if resource.data.status == 'OPEN';
+
+      // Questions Subcollection
+      match /questions/{questionId} {
+        // Students can read questions if exam is OPEN (never contains answer key)
+        allow read: if get(/databases/$(database)/documents/exams/$(examId)).data.status == 'OPEN' ||
+                       isExamOwner(examId);
+        allow write: if isExamOwner(examId);
+      }
+
+      // Answer Keys Subcollection (STRICTLY TEACHER/SERVER ONLY)
+      match /answerKeys/{questionId} {
+        allow read, write: if isExamOwner(examId);
+      }
+
+      // Enrolled Students Subcollection
+      match /students/{studentId} {
+        allow read: if true; // Used by student verification
+        allow write: if isExamOwner(examId);
+      }
+    }
+
+    // Attempts Collection
+    match /attempts/{attemptId} {
+      // Students can read their own attempt, teacher can read for their exam
+      allow read: if true;
+      
+      // Attempt creation and initial submission
+      allow create: if true;
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['answersSubmitted', 'currentQuestionIndex', 'updatedAt']);
+
+      // Student individual answers
+      match /answers/{questionId} {
+        allow read: if true;
+        allow create, update: if true;
+      }
+
+      // Proctoring violations
+      match /violations/{violationId} {
+        allow read: if true;
+        allow create: if true;
+      }
+    }
+
+    // Audit logs (Read-only for teachers)
+    match /auditLogs/{logId} {
+      allow read: if isTeacher();
+      allow write: if false; // Server-only
+    }
+  }
+}

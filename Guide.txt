@@ -1,0 +1,1704 @@
+**Teacher → Create Exam → Paste Student ID + Full Name from Google Sheets → Paste Questions → Open Exam → Students enter Exam Code + Student ID → Take exam → Auto-grade → Live results → Export to XLSX/CSV**
+
+Below is the reorganized implementation plan.
+
+---
+
+# Online Exam System V2
+
+## Next.js + Vercel + Firebase
+
+### Final Technology Stack
+
+| Component      | Technology                           | Purpose                                                 |
+| -------------- | ------------------------------------ | ------------------------------------------------------- |
+| Frontend       | Next.js + React + TypeScript         | Entire web application                                  |
+| Hosting        | Vercel                               | Deploy frontend                                         |
+| Authentication | Firebase Authentication              | Teacher login + temporary student authentication        |
+| Database       | Cloud Firestore                      | Students, exams, questions, attempts, results           |
+| Backend        | Firebase Cloud Functions             | Verification, grading, violations, sensitive operations |
+| Security       | Firestore Security Rules + App Check | Protect data                                            |
+| Export         | SheetJS (`xlsx`)                     | XLSX/CSV export                                         |
+| State          | React Context or Zustand             | Exam/session state                                      |
+| Repository     | GitHub                               | Source control + Vercel deployment                      |
+
+---
+
+# SYSTEM WORKFLOW
+
+The system should be designed around two completely different users.
+
+```text
+                    ONLINE EXAM SYSTEM
+                           │
+             ┌─────────────┴─────────────┐
+             │                           │
+          TEACHER                      STUDENT
+             │                           │
+       Teacher Login              Exam Code + Student ID
+             │                           │
+       Teacher Dashboard                 │
+             │                           │
+        Create Exam                      │
+             │                           │
+      Paste Student List                 │
+             │                           │
+      Paste Questions                    │
+             │                           │
+        Open Exam ───────────────────────┘
+             │
+       Live Results
+             │
+       Export Results
+```
+
+---
+
+# PHASE 0 — PROJECT FOUNDATION
+
+### Goal
+
+Create the basic application and connect:
+
+```text
+Next.js
+   ↓
+Firebase
+   ↓
+Firestore
+   ↓
+Vercel
+```
+
+### Tasks
+
+1. Create Firebase project.
+2. Enable Firestore.
+3. Enable Firebase Authentication.
+4. Enable:
+
+   * Email/Password
+   * Anonymous Authentication
+5. Create Next.js project:
+
+```text
+npx create-next-app@latest online-exam-v2
+```
+
+Use:
+
+* TypeScript
+* App Router
+* ESLint
+* `src/` directory if preferred
+
+6. Install:
+
+```text
+firebase
+firebase-admin
+xlsx
+```
+
+Optional:
+
+```text
+zustand
+```
+
+7. Configure Firebase environment variables.
+
+Example:
+
+```text
+NEXT_PUBLIC_FIREBASE_API_KEY
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+NEXT_PUBLIC_FIREBASE_PROJECT_ID
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+NEXT_PUBLIC_FIREBASE_APP_ID
+```
+
+8. Connect GitHub.
+9. Connect GitHub repository to Vercel.
+10. Deploy initial application.
+
+### Deliverable
+
+```text
+Next.js
+      ↓
+Vercel
+      ↓
+Firebase
+```
+
+working successfully.
+
+---
+
+# PHASE 1 — FIRESTORE DATA ARCHITECTURE
+
+This is where I would make the biggest improvement over the original plan.
+
+## Collections
+
+```text
+users/
+students/
+exams/
+attempts/
+auditLogs/
+```
+
+### Exam subcollections
+
+```text
+exams/{examId}/questions/
+exams/{examId}/answerKeys/
+exams/{examId}/students/
+```
+
+### Attempt subcollections
+
+```text
+attempts/{attemptId}/answers/
+attempts/{attemptId}/violations/
+```
+
+---
+
+# 1. Students
+
+```text
+students/{studentId}
+```
+
+Example:
+
+```json
+{
+  "studentId": "2026-001",
+  "fullName": "Juan Dela Cruz",
+  "active": true,
+  "createdAt": "...",
+  "updatedAt": "..."
+}
+```
+
+The **Student ID is the document ID**.
+
+This makes lookup extremely fast:
+
+```text
+students/2026-001
+```
+
+---
+
+# 2. Users
+
+Teachers:
+
+```text
+users/{uid}
+```
+
+Example:
+
+```json
+{
+  "email": "teacher@example.com",
+  "role": "teacher",
+  "fullName": "Instructor Name",
+  "active": true
+}
+```
+
+---
+
+# 3. Exams
+
+```text
+exams/{examId}
+```
+
+Example:
+
+```json
+{
+  "teacherUid": "abc123",
+  "title": "Midterm Examination",
+  "course": "Computer Programming",
+  "section": "BSIT 1A",
+
+  "examCode": "CP-MID-2026",
+
+  "opensAt": "...",
+  "closesAt": "...",
+
+  "timerMode": "per_question",
+  "timerSeconds": 60,
+
+  "randomizeQuestions": false,
+  "randomizeChoices": false,
+
+  "violationDeduction": 1,
+  "maxViolations": 3,
+
+  "retakePolicy": "ONE_ATTEMPT",
+
+  "status": "DRAFT",
+
+  "createdAt": "...",
+  "updatedAt": "..."
+}
+```
+
+---
+
+# 4. Exam Students
+
+This is important for your bulk Google Sheets workflow.
+
+```text
+exams/{examId}/students/{studentId}
+```
+
+Example:
+
+```json
+{
+  "studentId": "2026-001",
+  "fullName": "Juan Dela Cruz",
+  "eligible": true,
+  "addedAt": "..."
+}
+```
+
+This means:
+
+> Juan Dela Cruz is allowed to take this specific exam.
+
+---
+
+# 5. Questions
+
+```text
+exams/{examId}/questions/{questionId}
+```
+
+Example:
+
+```json
+{
+  "number": 1,
+  "type": "MCQ",
+  "questionText": "Which keyword is used for...",
+  "options": {
+    "A": "if",
+    "B": "loop",
+    "C": "switch",
+    "D": "case"
+  },
+  "points": 1
+}
+```
+
+**No answer key here.**
+
+---
+
+# 6. Answer Keys
+
+Separate collection:
+
+```text
+exams/{examId}/answerKeys/{questionId}
+```
+
+Example:
+
+```json
+{
+  "answer": "A",
+  "points": 1
+}
+```
+
+Students should never have permission to read this collection.
+
+---
+
+# 7. Attempts
+
+```text
+attempts/{attemptId}
+```
+
+Example:
+
+```json
+{
+  "examId": "exam123",
+  "studentId": "2026-001",
+  "studentUid": "firebase-uid",
+
+  "status": "IN_PROGRESS",
+
+  "startedAt": "...",
+  "finishedAt": null,
+
+  "rawScore": 0,
+  "maxScore": 50,
+  "deduction": 0,
+  "finalScore": 0,
+  "percentage": 0,
+
+  "violationCount": 0
+}
+```
+
+---
+
+# 8. Answers
+
+```text
+attempts/{attemptId}/answers/{questionId}
+```
+
+Example:
+
+```json
+{
+  "questionNumber": 1,
+  "answer": "A",
+  "submittedAt": "...",
+  "timeUsed": 34
+}
+```
+
+---
+
+# 9. Violations
+
+```text
+attempts/{attemptId}/violations/{violationId}
+```
+
+Example:
+
+```json
+{
+  "type": "TAB_SWITCH",
+  "timestamp": "...",
+  "sequence": 2
+}
+```
+
+---
+
+# 10. Audit Logs
+
+Add:
+
+```text
+auditLogs/{logId}
+```
+
+Example:
+
+```json
+{
+  "actorUid": "...",
+  "actorRole": "teacher",
+  "action": "CREATE_EXAM",
+  "examId": "...",
+  "timestamp": "..."
+}
+```
+
+This provides an administrative history.
+
+---
+
+# PHASE 2 — TEACHER AUTHENTICATION
+
+### Goal
+
+Create a secure teacher area.
+
+Teacher uses:
+
+```text
+Email
+Password
+```
+
+Firebase Authentication manages the session.
+
+Teacher routes:
+
+```text
+/teacher/dashboard
+/teacher/exams
+/teacher/exams/create
+/teacher/exams/[examId]
+/teacher/exams/[examId]/students
+/teacher/exams/[examId]/questions
+/teacher/exams/[examId]/results
+```
+
+---
+
+# PHASE 3 — TEACHER DASHBOARD
+
+Dashboard:
+
+```text
+┌─────────────────────────────────────────────┐
+│ Online Exam System                           │
+├─────────────────────────────────────────────┤
+│                                             │
+│ My Exams                                    │
+│                                             │
+│ ┌─────────────────────────────────────────┐ │
+│ │ Midterm Exam                            │ │
+│ │ BSIT 1A                                 │ │
+│ │ Status: OPEN                            │ │
+│ │ Students: 42                            │ │
+│ │                                         │ │
+│ │ [Manage] [Results] [Close Exam]         │ │
+│ └─────────────────────────────────────────┘ │
+│                                             │
+│ [+ Create Exam]                             │
+└─────────────────────────────────────────────┘
+```
+
+Use Firestore `onSnapshot()` where live updates are useful.
+
+---
+
+# PHASE 4 — CREATE EXAM
+
+Teacher enters:
+
+```text
+Exam Title
+Course
+Section
+Exam Code
+Opening Date/Time
+Closing Date/Time
+Timer
+Violation Deduction
+Maximum Violations
+Retake Policy
+Randomization
+```
+
+Example:
+
+```text
+Exam Title:
+Midterm Examination
+
+Course:
+Computer Programming
+
+Section:
+BSIT 1A
+
+Exam Code:
+CPMID2026
+
+Timer:
+60 seconds/question
+
+Violation Deduction:
+1 point
+
+Maximum Violations:
+3
+```
+
+---
+
+# PHASE 5 — BULK STUDENT IMPORT
+
+This is now a **core feature**, not an optional detail.
+
+## Teacher workflow
+
+Teacher goes to:
+
+```text
+Exam
+ ↓
+Students
+ ↓
+Import Students
+```
+
+Then sees:
+
+```text
+┌─────────────────────────────────────────────┐
+│ Import Students                             │
+├─────────────────────────────────────────────┤
+│                                             │
+│ Copy Student ID + Full Name from Google     │
+│ Sheets and paste below.                     │
+│                                             │
+│ ┌─────────────────────────────────────────┐ │
+│ │ 2026-001    Juan Dela Cruz             │ │
+│ │ 2026-002    Maria Santos               │ │
+│ │ 2026-003    Pedro Garcia               │ │
+│ │ 2026-004    Ana Reyes                  │ │
+│ └─────────────────────────────────────────┘ │
+│                                             │
+│ [Preview Students]                          │
+└─────────────────────────────────────────────┘
+```
+
+Google Sheets automatically copies columns as **tab-separated values**, so the system parses:
+
+```text
+Student ID<TAB>Full Name
+```
+
+---
+
+## Preview
+
+```text
+Students Found: 50
+
+┌────┬────────────┬────────────────────┬────────┐
+│ #  │ Student ID │ Full Name          │ Status │
+├────┼────────────┼────────────────────┼────────┤
+│ 1  │ 2026-001   │ Juan Dela Cruz     │ ✓      │
+│ 2  │ 2026-002   │ Maria Santos       │ ✓      │
+│ 3  │ 2026-003   │ Pedro Garcia       │ ✓      │
+└────┴────────────┴────────────────────┴────────┘
+
+50 valid
+0 duplicates
+0 missing IDs
+
+[Import 50 Students]
+```
+
+---
+
+## Validation
+
+The parser should detect:
+
+### Valid
+
+```text
+2026-001    Juan Dela Cruz
+```
+
+### Missing ID
+
+```text
+             Juan Dela Cruz
+```
+
+### Missing name
+
+```text
+2026-002
+```
+
+### Duplicate
+
+```text
+2026-001    Juan Dela Cruz
+2026-001    Juan Dela Cruz
+```
+
+### Empty rows
+
+Ignore automatically.
+
+---
+
+# PHASE 6 — BULK QUESTION IMPORT
+
+Keep your existing pipe-delimited format.
+
+```text
+NUMBER | TYPE | QUESTION_TEXT | OPTION_A | OPTION_B | OPTION_C | OPTION_D | ANSWER_KEY | POINTS
+```
+
+Example:
+
+```text
+1 | MCQ | What keyword is used for conditional statements? | if | loop | array | printf | A | 1
+2 | MCQ | Which symbol ends a C statement? | : | ; | . | , | B | 1
+```
+
+Teacher pastes:
+
+```text
+┌─────────────────────────────────────────────┐
+│ Import Questions                            │
+├─────────────────────────────────────────────┤
+│                                             │
+│ 1 | MCQ | What keyword... | if | loop ...  │
+│ 2 | MCQ | Which symbol... | : | ; ...     │
+│                                             │
+│ [Validate]                                  │
+└─────────────────────────────────────────────┘
+```
+
+System previews:
+
+```text
+20 questions detected
+
+✓ 20 valid
+✓ 20 answer keys
+✓ No duplicate numbers
+```
+
+Then:
+
+**Import Questions**
+
+The system splits the data into:
+
+```text
+questions/
+```
+
+and:
+
+```text
+answerKeys/
+```
+
+The answer key is never sent to students.
+
+---
+
+# PHASE 7 — EXAM PUBLISHING
+
+Exam lifecycle:
+
+```text
+DRAFT
+   ↓
+SCHEDULED
+   ↓
+OPEN
+   ↓
+CLOSED
+   ↓
+ARCHIVED
+```
+
+Teacher cannot accidentally expose an incomplete exam.
+
+Before publishing:
+
+```text
+✓ Exam settings complete
+✓ Students imported
+✓ Questions imported
+✓ Answer keys valid
+✓ No duplicate questions
+✓ Exam code configured
+```
+
+Then:
+
+**Publish / Open Exam**
+
+---
+
+# PHASE 8 — STUDENT LOGIN
+
+Keep your convenient workflow.
+
+Student sees:
+
+```text
+┌─────────────────────────────────────┐
+│          ONLINE EXAM                │
+│                                     │
+│ Exam Code                           │
+│ [____________________]              │
+│                                     │
+│ Student ID                          │
+│ [____________________]              │
+│                                     │
+│          [Start Exam]               │
+└─────────────────────────────────────┘
+```
+
+Student does **not** need a password.
+
+---
+
+# PHASE 9 — STUDENT VERIFICATION
+
+The server checks:
+
+```text
+Exam exists?
+       ↓
+Exam is OPEN?
+       ↓
+Student exists?
+       ↓
+Student belongs to exam?
+       ↓
+Existing attempt?
+       ↓
+Retake allowed?
+       ↓
+Create attempt
+```
+
+If everything is valid:
+
+```text
+Student
+   ↓
+Instructions
+   ↓
+Start Exam
+```
+
+---
+
+# PHASE 10 — EXAM RUNNER
+
+Keep your V1 experience.
+
+```text
+Question 5 of 20
+
+Time Remaining
+00:42
+
+────────────────────────────
+
+What does an if statement do?
+
+○ A. Repeats code
+○ B. Makes a decision
+○ C. Creates an array
+○ D. Prints text
+
+                         [Submit Answer]
+```
+
+After submission:
+
+```text
+Question 6
+```
+
+No back button.
+
+---
+
+# PHASE 11 — TIMER
+
+Support:
+
+### Per-question timer
+
+```text
+60 seconds
+```
+
+or potentially:
+
+### Whole-exam timer
+
+```text
+60 minutes
+```
+
+For your current system, **per-question timer should remain the default**.
+
+When timer reaches:
+
+```text
+00:00
+```
+
+automatically submit the current answer.
+
+---
+
+# PHASE 12 — SERVER-AUTHORITATIVE TIMING
+
+This is important.
+
+The browser timer is only the visual timer.
+
+The server determines:
+
+```text
+Exam opening time
+Exam closing time
+Attempt start
+Attempt submission
+```
+
+Therefore students cannot legitimately extend the exam simply by manipulating:
+
+```text
+setInterval()
+Date.now()
+```
+
+or browser JavaScript.
+
+---
+
+# PHASE 13 — PROCTORING / BROWSER ACTIVITY MONITORING
+
+Use:
+
+```text
+visibilitychange
+blur
+fullscreenchange
+```
+
+Record:
+
+```text
+TAB_SWITCH
+WINDOW_BLUR
+FULLSCREEN_EXIT
+PAGE_HIDDEN
+```
+
+Example:
+
+```text
+Violation 1/3
+
+Browser activity detected.
+
+1 point will be deducted.
+```
+
+Don't call this absolute cheating detection.
+
+It is better described as:
+
+> **Browser Activity Monitoring**
+
+because these events are not proof of cheating.
+
+---
+
+# PHASE 14 — VIOLATION PROCESSING
+
+Use a Cloud Function:
+
+```text
+logViolation()
+```
+
+Function:
+
+```text
+verify authenticated user
+        ↓
+verify attempt ownership
+        ↓
+Firestore transaction
+        ↓
+increment violationCount
+        ↓
+calculate deduction
+        ↓
+create violation record
+```
+
+Example:
+
+```text
+Violation 1
+Deduction: -1
+
+Violation 2
+Deduction: -2
+```
+
+If:
+
+```text
+violationCount >= maxViolations
+```
+
+then:
+
+```text
+AUTO_SUBMIT
+```
+
+or:
+
+```text
+LOCK
+```
+
+depending on exam settings.
+
+---
+
+# PHASE 15 — FINISH EXAM
+
+Student clicks:
+
+```text
+Submit Exam
+```
+
+or timer/exam closes automatically.
+
+Call:
+
+```text
+finishAttempt()
+```
+
+Cloud Function:
+
+```text
+Get attempt
+       ↓
+Get answers
+       ↓
+Get answer keys
+       ↓
+Calculate raw score
+       ↓
+Calculate deduction
+       ↓
+Calculate final score
+       ↓
+Mark submitted
+```
+
+---
+
+# PHASE 16 — GRADING
+
+Example:
+
+```text
+Questions: 50
+Correct: 43
+
+Raw Score:
+43/50
+
+Violations:
+2
+
+Deduction:
+-2
+
+Final Score:
+41/50
+
+Percentage:
+82%
+```
+
+Store:
+
+```json
+{
+  "rawScore": 43,
+  "maxScore": 50,
+  "deduction": 2,
+  "finalScore": 41,
+  "percentage": 82
+}
+```
+
+The student can optionally see:
+
+```text
+Exam Submitted Successfully
+```
+
+without seeing the actual score until the teacher permits it.
+
+---
+
+# PHASE 17 — LIVE RESULTS DASHBOARD
+
+Teacher opens:
+
+```text
+Exam → Results
+```
+
+Dashboard:
+
+```text
+MIDTERM EXAM
+
+Students:       50
+Submitted:      43
+In Progress:     5
+Not Started:     2
+
+Average:       82.4%
+Highest:       98%
+Lowest:        54%
+```
+
+Table:
+
+| Student ID | Name           | Status      | Score | Violations |
+| ---------- | -------------- | ----------- | ----: | ---------: |
+| 2026-001   | Juan Dela Cruz | Submitted   | 45/50 |          1 |
+| 2026-002   | Maria Santos   | Submitted   | 48/50 |          0 |
+| 2026-003   | Pedro Garcia   | In Progress |     — |          2 |
+
+Results update automatically.
+
+---
+
+# PHASE 18 — STUDENT ANSWER REVIEW
+
+Teacher can click:
+
+```text
+View Answers
+```
+
+Example:
+
+```text
+Juan Dela Cruz
+
+Q1  A ✓
+Q2  C ✓
+Q3  B ✗
+Q4  A ✓
+...
+```
+
+Teacher can also view:
+
+```text
+View Violations
+```
+
+Example:
+
+```text
+10:32:15 — TAB_SWITCH
+10:41:03 — FULLSCREEN_EXIT
+```
+
+---
+
+# PHASE 19 — EXPORT
+
+This should be one of the main features of V2.
+
+Teacher gets:
+
+```text
+[ Export XLSX ]
+[ Export CSV ]
+```
+
+## Summary export
+
+```text
+Student ID
+Full Name
+Section
+Raw Score
+Deduction
+Final Score
+Percentage
+Violation Count
+Status
+Started At
+Finished At
+```
+
+## Answer export
+
+```text
+Student ID
+Full Name
+Q1
+Q2
+Q3
+...
+Q50
+```
+
+## Violation export
+
+```text
+Student ID
+Full Name
+Violation Type
+Timestamp
+```
+
+Everything is generated client-side using SheetJS.
+
+---
+
+# PHASE 20 — SECURITY
+
+Implement:
+
+## Firebase Authentication
+
+Teacher:
+
+```text
+Email + Password
+```
+
+Student:
+
+```text
+Anonymous Firebase Auth
++
+verified Student ID
+```
+
+---
+
+## Firestore Rules
+
+Students can:
+
+```text
+read allowed exam questions
+read own attempt
+write own answers
+```
+
+Students cannot:
+
+```text
+read another student's attempt
+read answerKeys
+read teacher information
+modify score
+modify violationCount
+modify finalScore
+```
+
+Teachers can only access:
+
+```text
+their own exams
+their students
+their results
+```
+
+---
+
+# PHASE 21 — SERVER-SIDE SECURITY
+
+Sensitive operations must use Cloud Functions.
+
+```text
+verifyStudent()
+startAttempt()
+finishAttempt()
+logViolation()
+duplicateExam()
+resetAttempt()
+```
+
+Never trust the browser to calculate:
+
+```text
+score
+deduction
+finalScore
+violationCount
+```
+
+---
+
+# PHASE 22 — OFFLINE / NETWORK FAILURE
+
+Use Firestore offline persistence carefully.
+
+Normal answer flow:
+
+```text
+Student answers
+       ↓
+Local Firestore cache
+       ↓
+Firestore
+```
+
+If Internet temporarily drops:
+
+```text
+Student continues
+       ↓
+Answers stored locally
+       ↓
+Connection returns
+       ↓
+Synchronization
+```
+
+But the server remains authoritative for:
+
+```text
+deadline
+submission
+grading
+attempt status
+```
+
+This prevents offline persistence from accidentally becoming a way to extend exam time.
+
+---
+
+# PHASE 23 — PERFORMANCE
+
+Optimize specifically for school Wi-Fi.
+
+### Student side
+
+Avoid unnecessary reads.
+
+Load:
+
+```text
+Exam information
+Questions
+Current attempt
+```
+
+Keep the question interface lightweight.
+
+### Teacher side
+
+Use live listeners for:
+
+```text
+Exam status
+Results
+Attempt status
+```
+
+Don't constantly listen to every answer/violation document.
+
+---
+
+# PHASE 24 — VERCEL DEPLOYMENT
+
+Production architecture:
+
+```text
+GitHub
+   ↓
+Vercel
+   ↓
+Next.js
+```
+
+Firebase:
+
+```text
+Firebase Auth
+Firestore
+Cloud Functions
+App Check
+```
+
+Set environment variables through Vercel.
+
+Never commit:
+
+```text
+.env
+service account keys
+Firebase Admin credentials
+```
+
+---
+
+# PHASE 25 — TESTING
+
+Before using it for a real exam:
+
+### Teacher testing
+
+```text
+✓ Create exam
+✓ Edit exam
+✓ Import students
+✓ Detect duplicates
+✓ Import questions
+✓ Detect invalid questions
+✓ Open exam
+✓ Close exam
+```
+
+### Student testing
+
+```text
+✓ Valid Student ID
+✓ Invalid Student ID
+✓ Wrong exam code
+✓ Student not enrolled
+✓ Duplicate attempt
+✓ Timer
+✓ Auto-submit
+✓ No back button
+```
+
+### Security testing
+
+```text
+✓ Student cannot see answer key
+✓ Student cannot change score
+✓ Student cannot access another student
+✓ Student cannot modify violation count
+✓ Teacher cannot access another teacher's exam
+```
+
+---
+
+# PHASE 26 — LOAD TESTING
+
+Simulate:
+
+```text
+5 students
+10 students
+30 students
+50 students
+100 students
+```
+
+Especially test:
+
+```text
+50 students
+×
+50 questions
+```
+
+Test:
+
+```text
+simultaneous login
+simultaneous answer submission
+simultaneous violations
+simultaneous finishing
+live results
+XLSX export
+```
+
+---
+
+# PHASE 27 — DATA MIGRATION FROM V1
+
+Only after V2 is stable.
+
+Export V1:
+
+```text
+Students → CSV
+Questions → CSV
+Historical results → CSV
+```
+
+Then migrate what is actually useful.
+
+Keep V1 available as:
+
+```text
+READ-ONLY BACKUP
+```
+
+for at least one exam cycle.
+
+---
+
+# PHASE 28 — PILOT EXAM
+
+Before using it for an actual graded exam:
+
+```text
+3–5 students
+```
+
+Run a complete mock exam.
+
+Test:
+
+```text
+Normal connection
+Slow connection
+Disconnected connection
+Tab switching
+Fullscreen exit
+Timer expiration
+Exam closing
+Multiple simultaneous submissions
+```
+
+---
+
+# PHASE 29 — OPTIONAL FUTURE FEATURES
+
+After V2 is stable:
+
+### Question randomization
+
+```text
+Student A
+Q1 Q2 Q3 Q4
+
+Student B
+Q3 Q1 Q4 Q2
+```
+
+### Choice randomization
+
+```text
+A B C D
+```
+
+changes per student.
+
+### Question bank
+
+```text
+Question Bank
+      ↓
+Select 50 questions
+      ↓
+Create Exam
+```
+
+### Analytics
+
+```text
+Most difficult question
+Most missed question
+Average score
+Item difficulty
+Section comparison
+```
+
+### PWA
+
+Allow installation on:
+
+```text
+laptops
+tablets
+mobile devices
+```
+
+---
+
+# FINAL REPOSITORY STRUCTURE
+
+I would use:
+
+```text
+online-exam-v2/
+│
+├── app/
+│   │
+│   ├── (teacher)/
+│   │   └── teacher/
+│   │       ├── dashboard/
+│   │       ├── exams/
+│   │       │   ├── create/
+│   │       │   └── [examId]/
+│   │       │       ├── overview/
+│   │       │       ├── students/
+│   │       │       ├── questions/
+│   │       │       ├── settings/
+│   │       │       └── results/
+│   │       │
+│   │       └── login/
+│   │
+│   ├── (student)/
+│   │   └── exam/
+│   │       ├── login/
+│   │       ├── instructions/
+│   │       ├── [attemptId]/
+│   │       └── complete/
+│   │
+│   └── layout.tsx
+│
+├── components/
+│   ├── teacher/
+│   ├── student/
+│   ├── exam/
+│   └── shared/
+│
+├── lib/
+│   ├── firebase/
+│   │   ├── client.ts
+│   │   ├── auth.ts
+│   │   └── firestore.ts
+│   │
+│   ├── hooks/
+│   │   ├── useAuth.ts
+│   │   ├── useTimer.ts
+│   │   └── useProctoring.ts
+│   │
+│   ├── import/
+│   │   ├── studentParser.ts
+│   │   └── questionParser.ts
+│   │
+│   └── export/
+│       ├── xlsxExport.ts
+│       └── csvExport.ts
+│
+├── functions/
+│   └── src/
+│       ├── admin.ts
+│       ├── verifyStudent.ts
+│       ├── startAttempt.ts
+│       ├── finishAttempt.ts
+│       ├── logViolation.ts
+│       ├── duplicateExam.ts
+│       └── resetAttempt.ts
+│
+├── firestore.rules
+├── firestore.indexes.json
+├── firebase.json
+├── SCHEMA.md
+├── package.json
+└── README.md
+```
+
+---
+
+# FINAL BUILD ORDER
+
+I would now build it in this exact order:
+
+```text
+01  Foundation
+ ↓
+02  Firebase + Firestore Schema
+ ↓
+03  Teacher Login
+ ↓
+04  Teacher Dashboard
+ ↓
+05  Create Exam
+ ↓
+06  Bulk Student Import
+ ↓
+07  Bulk Question Import
+ ↓
+08  Student Login
+ ↓
+09  Student Verification
+ ↓
+10  Start Attempt
+ ↓
+11  Exam Runner
+ ↓
+12  Timer
+ ↓
+13  Submit Answer
+ ↓
+14  Finish Exam
+ ↓
+15  Server-Side Grading
+ ↓
+16  Results Dashboard
+ ↓
+17  XLSX/CSV Export
+ ↓
+18  Browser Activity Monitoring
+ ↓
+19  Security Rules
+ ↓
+20  App Check
+ ↓
+21  Offline/Network Handling
+ ↓
+22  Load Testing
+ ↓
+23  Production Deployment
+ ↓
+24  V1 Migration
+```
+
+## The most important part
+
+Your actual **teacher workflow** is now extremely simple:
+
+```text
+             TEACHER
+                │
+                ▼
+          LOGIN
+                │
+                ▼
+        CREATE EXAM
+                │
+       ┌────────┴────────┐
+       ▼                 ▼
+ PASTE STUDENTS     PASTE QUESTIONS
+       │                 │
+       │                 │
+ Google Sheets       Pipe Format
+       │                 │
+       └────────┬────────┘
+                ▼
+          REVIEW / VALIDATE
+                │
+                ▼
+            OPEN EXAM
+                │
+                ▼
+        ┌───────────────┐
+        │    STUDENTS   │
+        │               │
+        │ Exam Code     │
+        │ Student ID    │
+        └───────┬───────┘
+                ▼
+           TAKE EXAM
+                │
+                ▼
+        AUTO GRADING
+                │
+                ▼
+        LIVE RESULTS
+                │
+       ┌────────┴────────┐
+       ▼                 ▼
+   XLSX EXPORT       CSV EXPORT
+```
+
+
