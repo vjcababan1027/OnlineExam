@@ -93,6 +93,7 @@ export async function createExam(examData: Omit<Exam, 'id' | 'createdAt' | 'upda
   const now = new Date().toISOString();
   const exam: Exam = {
     ...examData,
+    examCode: examData.examCode.trim().toUpperCase(),
     id,
     createdAt: now,
     updatedAt: now,
@@ -118,9 +119,14 @@ export async function createExam(examData: Omit<Exam, 'id' | 'createdAt' | 'upda
 
 export async function updateExam(examId: string, updates: Partial<Exam>): Promise<void> {
   const now = new Date().toISOString();
+  const cleanUpdates = { ...updates };
+  if (cleanUpdates.examCode) {
+    cleanUpdates.examCode = cleanUpdates.examCode.trim().toUpperCase();
+  }
+
   if (isFirebaseConfigured && db) {
     await updateDoc(doc(db, 'exams', examId), {
-      ...updates,
+      ...cleanUpdates,
       updatedAt: serverTimestamp()
     });
   } else {
@@ -128,7 +134,7 @@ export async function updateExam(examId: string, updates: Partial<Exam>): Promis
     if (mock.exams[examId]) {
       mock.exams[examId] = {
         ...mock.exams[examId],
-        ...updates,
+        ...cleanUpdates,
         updatedAt: now
       };
       saveMockDb(mock);
@@ -209,14 +215,44 @@ export async function getExam(examId: string): Promise<Exam | null> {
 export async function getExamByCode(examCode: string): Promise<Exam | null> {
   const normalized = examCode.trim().toUpperCase();
   if (isFirebaseConfigured && db) {
-    const q = query(collection(db, 'exams'), where('examCode', '==', normalized));
-    const snap = await getDocs(q);
-    if (snap.empty) return null;
-    const docSnap = snap.docs[0];
-    return { id: docSnap.id, ...docSnap.data() } as Exam;
+    try {
+      // 1. Exact normalized match
+      const q = query(collection(db, 'exams'), where('examCode', '==', normalized));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const docSnap = snap.docs[0];
+        return { id: docSnap.id, ...docSnap.data() } as Exam;
+      }
+
+      // 2. Raw trimmed match in case stored in mixed case
+      const rawTrimmed = examCode.trim();
+      if (rawTrimmed !== normalized) {
+        const qRaw = query(collection(db, 'exams'), where('examCode', '==', rawTrimmed));
+        const snapRaw = await getDocs(qRaw);
+        if (!snapRaw.empty) {
+          const docSnap = snapRaw.docs[0];
+          return { id: docSnap.id, ...docSnap.data() } as Exam;
+        }
+      }
+
+      // 3. Fallback scan if case differed
+      const allSnap = await getDocs(collection(db, 'exams'));
+      const foundDoc = allSnap.docs.find(d => {
+        const data = d.data();
+        return data?.examCode && String(data.examCode).trim().toUpperCase() === normalized;
+      });
+      if (foundDoc) {
+        return { id: foundDoc.id, ...foundDoc.data() } as Exam;
+      }
+
+      return null;
+    } catch (err) {
+      console.error('getExamByCode error in Firestore:', err);
+      return null;
+    }
   } else {
     const mock = loadMockDb();
-    const found = Object.values(mock.exams).find(e => e.examCode.toUpperCase() === normalized);
+    const found = Object.values(mock.exams).find(e => e.examCode && e.examCode.toUpperCase() === normalized);
     return found || null;
   }
 }
