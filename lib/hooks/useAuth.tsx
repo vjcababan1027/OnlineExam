@@ -104,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginAsTeacher = async (
     email: string,
     password: string = 'password123',
-    fullName: string = 'Prof. Juan Dela Cruz'
+    fullName: string = 'Instructor'
   ): Promise<{ success: boolean; error?: string }> => {
     try {
       if (isFirebaseConfigured && auth && db) {

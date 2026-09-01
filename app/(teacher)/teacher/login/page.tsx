@@ -108,7 +108,7 @@ export default function TeacherLoginPage() {
                         value={fullName}
                         onChange={(e) => setFullName(e.target.value)}
                         className="w-full pl-10 pr-3.5 py-2.5 rounded-xl glass-input text-sm"
-                        placeholder="e.g. Prof. Juan Dela Cruz"
+                        placeholder="e.g. Prof. Smith"
                       />
                     </div>
                   </div>

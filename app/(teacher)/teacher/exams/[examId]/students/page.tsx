@@ -78,14 +78,14 @@ export default function BulkStudentImportPage({ params }: { params: Promise<{ ex
   };
 
   const handlePasteSample = () => {
-    const sample = `2026-001\tJuan Dela Cruz
-2026-002\tMaria Santos
-2026-003\tPedro Garcia
-2026-004\tAna Reyes
-2026-005\tJose Rizal
-2026-006\tAndres Bonifacio
-2026-007\tApolinario Mabini
-2026-008\tGabriela Silang`;
+    const sample = `2024-001\tAlex Johnson
+2024-002\tSamantha Lee
+2024-003\tMark Rivera
+2024-004\tEmily Chen
+2024-005\tJames Carter
+2024-006\tSophia Martinez
+2024-007\tLiam Thompson
+2024-008\tOlivia Brown`;
     setRawText(sample);
     setParseResult(parseStudentList(sample));
   };
@@ -182,7 +182,7 @@ export default function BulkStudentImportPage({ params }: { params: Promise<{ ex
                       setParseResult(null);
                     }
                   }}
-                  placeholder="2026-001&#9;Juan Dela Cruz&#10;2026-002&#9;Maria Santos&#10;2026-003&#9;Pedro Garcia&#10;2026-004&#9;Ana Reyes"
+                  placeholder="2024-001&#9;Alex Johnson&#10;2024-002&#9;Samantha Lee&#10;2024-003&#9;Mark Rivera"
                   className="w-full p-3.5 rounded-xl glass-input font-mono text-xs leading-relaxed resize-none"
                 />
               </div>
