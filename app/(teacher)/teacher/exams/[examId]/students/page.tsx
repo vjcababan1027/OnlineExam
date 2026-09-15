@@ -300,7 +300,7 @@ export default function BulkStudentImportPage({ params }: { params: Promise<{ ex
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60">
-                      {currentStudents.map((st, idx) => (
+                      {[...currentStudents].sort((a, b) => a.fullName.localeCompare(b.fullName)).map((st, idx) => (
                         <tr key={st.studentId} className="hover:bg-slate-900/40">
                           <td className="py-2 px-3 text-slate-500 font-mono">{idx + 1}</td>
                           <td className="py-2 px-3 font-mono font-medium text-indigo-300">{st.studentId}</td>

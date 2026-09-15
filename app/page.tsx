@@ -1,5 +1,7 @@
 'use client';
 
+import { useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { 
   GraduationCap, 
@@ -8,29 +10,48 @@ import {
   FileSpreadsheet, 
   Clock, 
   Eye,
+  Star,
 } from 'lucide-react';
 
 export default function HomePage() {
+  const router = useRouter();
+  const clickCountRef = useRef(0);
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleStarClick = useCallback(() => {
+    clickCountRef.current += 1;
+
+    // Reset the counter after 1.5 s of inactivity
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = setTimeout(() => {
+      clickCountRef.current = 0;
+    }, 1500);
+
+    if (clickCountRef.current >= 3) {
+      clickCountRef.current = 0;
+      if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+      router.push('/teacher/login');
+    }
+  }, [router]);
+
   return (
     <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col">
-      {/* Minimal top bar with Teacher Login tucked top-right */}
+      {/* Header — no visible teacher button */}
       <header className="sticky top-0 z-40 w-full border-b border-slate-800/80 bg-[#090d16]/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <Link href="/" className="flex items-center gap-3 group">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/25 group-hover:scale-105 transition-transform">
-              <GraduationCap className="h-5 w-5" />
-            </div>
-            <span className="text-lg font-bold tracking-tight text-white">Online Exam</span>
-          </Link>
-
-          {/* Teacher Login — top-right, small & unobtrusive so students skip it */}
-          <Link
-            href="/teacher/login"
-            className="flex items-center gap-1.5 text-xs font-medium px-3.5 py-1.5 rounded-lg bg-slate-800/70 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700/50 transition-colors"
-          >
-            <GraduationCap className="h-3.5 w-3.5" />
-            Teacher Login
-          </Link>
+          {/* Brand — star icon is a hidden Easter egg (3 clicks → teacher login) */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleStarClick}
+              aria-label="Home"
+              className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-500 text-white shadow-lg shadow-indigo-500/25 hover:scale-105 transition-transform focus:outline-none"
+            >
+              <Star className="h-5 w-5" />
+            </button>
+            <Link href="/" className="text-lg font-bold tracking-tight text-white">
+              Online Exam
+            </Link>
+          </div>
         </div>
       </header>
 

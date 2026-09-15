@@ -3,8 +3,8 @@
 import { useState, useEffect, use } from 'react';
 import Link from 'next/link';
 import { Navbar } from '@/components/shared/Navbar';
-import { getExam, getAttempt, getExamQuestions, getExamResultsWithDetails } from '@/lib/firebase/db';
-import { Exam, Attempt, Question, StudentAnswer, Violation } from '@/lib/types';
+import { getExam, getAttempt, getExamQuestions, getExamResultsWithDetails, getExamAnswerKeys } from '@/lib/firebase/db';
+import { Exam, Attempt, Question, StudentAnswer, Violation, AnswerKey } from '@/lib/types';
 import { 
   ArrowLeft, 
   CheckCircle2, 
@@ -30,21 +30,24 @@ export default function AttemptInspectorPage({
   const [questions, setQuestions] = useState<Question[]>([]);
   const [answers, setAnswers] = useState<StudentAnswer[]>([]);
   const [violations, setViolations] = useState<Violation[]>([]);
+  const [answerKeys, setAnswerKeys] = useState<Record<string, AnswerKey>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [ex, att, qList, fullDetails] = await Promise.all([
+        const [ex, att, qList, fullDetails, keys] = await Promise.all([
           getExam(examId),
           getAttempt(attemptId),
           getExamQuestions(examId),
-          getExamResultsWithDetails(examId)
+          getExamResultsWithDetails(examId),
+          getExamAnswerKeys(examId)
         ]);
 
         setExam(ex);
         setAttempt(att);
         setQuestions(qList);
+        setAnswerKeys(keys);
         if (att) {
           setAnswers(fullDetails.answersMap[attemptId] || []);
           setViolations(fullDetails.violationsMap[attemptId] || []);
@@ -181,6 +184,7 @@ export default function AttemptInspectorPage({
               const ans = answerByQuestionId.get(q.id);
               const isSubmitted = Boolean(ans);
               const isCorrect = ans?.isCorrect;
+              const correctKey = answerKeys[q.id]?.answer?.toUpperCase();
 
               return (
                 <div
@@ -222,25 +226,45 @@ export default function AttemptInspectorPage({
                     {(['A', 'B', 'C', 'D'] as const).map((optKey) => {
                       const optText = q.options[optKey];
                       if (!optText) return null;
-                      const isStudentChoice = ans?.answer === optKey;
+                      const isStudentChoice = ans?.answer?.toUpperCase() === optKey;
+                      const isCorrectOption = correctKey === optKey;
+
+                      // Determine styling:
+                      // - Correct answer: always shown in green
+                      // - Student's wrong pick: shown in red
+                      // - Student's correct pick: shown in green (covered by isCorrectOption)
+                      let optClass = 'bg-slate-900/60 border-slate-800 text-slate-400';
+                      if (isCorrectOption && isStudentChoice) {
+                        optClass = 'bg-emerald-900/40 border-emerald-400 text-emerald-200 font-semibold';
+                      } else if (isCorrectOption) {
+                        optClass = 'bg-emerald-900/20 border-emerald-500/60 text-emerald-300 font-semibold';
+                      } else if (isStudentChoice) {
+                        optClass = 'bg-rose-900/40 border-rose-400 text-rose-200 font-semibold';
+                      }
 
                       return (
                         <div
                           key={optKey}
-                          className={`p-2.5 rounded-lg border ${
-                            isStudentChoice
-                              ? isCorrect
-                                ? 'bg-emerald-900/40 border-emerald-400 text-emerald-200 font-semibold'
-                                : 'bg-rose-900/40 border-rose-400 text-rose-200 font-semibold'
-                              : 'bg-slate-900/60 border-slate-800 text-slate-400'
-                          } flex items-center justify-between`}
+                          className={`p-2.5 rounded-lg border ${optClass} flex items-center justify-between`}
                         >
                           <span>{optKey}. {optText}</span>
-                          {isStudentChoice && (
-                            <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-black/40">
-                              Student Choice
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1">
+                            {isCorrectOption && (
+                              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
+                                ✓ Correct
+                              </span>
+                            )}
+                            {isStudentChoice && !isCorrectOption && (
+                              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400">
+                                ✗ Student
+                              </span>
+                            )}
+                            {isStudentChoice && isCorrectOption && (
+                              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
+                                ✓ Student
+                              </span>
+                            )}
+                          </div>
                         </div>
                       );
                     })}

@@ -70,7 +70,7 @@ export default function ExamResultsPage({ params }: { params: Promise<{ examId: 
       attempt: att || null,
       status: att ? att.status : 'NOT_STARTED',
     };
-  });
+  }).sort((a, b) => a.name.localeCompare(b.name));
 
   const submittedAttempts = attempts.filter((a) => a.status === 'SUBMITTED');
   const inProgressAttempts = attempts.filter((a) => a.status === 'IN_PROGRESS');

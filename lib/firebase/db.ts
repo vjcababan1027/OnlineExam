@@ -379,6 +379,22 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
   }
 }
 
+export async function getExamAnswerKeys(examId: string): Promise<Record<string, AnswerKey>> {
+  if (isFirebaseConfigured && db) {
+    const snap = await getDocs(collection(db, 'exams', examId, 'answerKeys'));
+    const map: Record<string, AnswerKey> = {};
+    snap.docs.forEach(d => {
+      const k = d.data() as AnswerKey;
+      map[k.questionId] = k;
+    });
+    return map;
+  } else {
+    const mock = loadMockDb();
+    return mock.answerKeys[examId] || {};
+  }
+}
+
+
 // ------------------------------------------
 // Student Eligibility & Attempt Flow
 // ------------------------------------------

@@ -23,7 +23,8 @@ import {
   Lock,
   GraduationCap,
   FastForward,
-  HelpCircle
+  HelpCircle,
+  Loader2
 } from 'lucide-react';
 
 export default function ExamRunnerPage({
@@ -42,6 +43,11 @@ export default function ExamRunnerPage({
   const [selectedOption, setSelectedOption] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  // A ref-based lock shared across closures (state updates are async, ref is synchronous)
+  const isSubmittingRef = useRef(false);
+  // Controls the final-submission full-screen loading overlay
+  const [finalizingExam, setFinalizingExam] = useState(false);
+  const [finalizeStep, setFinalizeStep] = useState(0);
   const [violationAlert, setViolationAlert] = useState<{ type: string; count: number; deduction: number; details?: string } | null>(null);
 
   // Time used tracker for current question
@@ -92,7 +98,10 @@ export default function ExamRunnerPage({
   // Handle Question Submission (Manual, Skip, or Auto on 00:00)
   const submitCurrentAnswer = useCallback(
     async (isAutoSubmit = false, isSkipped = false) => {
-      if (submitting || !exam || questions.length === 0) return;
+      // Use ref for synchronous guard — prevents double-submit from both timer
+      // callbacks (stale closures) and rapid user clicks racing async state updates
+      if (isSubmittingRef.current || !exam || questions.length === 0) return;
+      isSubmittingRef.current = true;
       setSubmitting(true);
 
       const currentQ = questions[currentIndex];
@@ -116,20 +125,40 @@ export default function ExamRunnerPage({
           setCurrentIndex(nextIdx);
           setSelectedOption('');
           questionStartTime.current = Date.now();
+          isSubmittingRef.current = false;
           setSubmitting(false);
         } else {
-          // Last Question -> Finish & Grade Exam
+          // Last Question -> show loading overlay then finish & grade exam
+          setFinalizingExam(true);
+          setFinalizeStep(0);
+
+          // Step 1: Securing responses
+          await new Promise(r => setTimeout(r, 600));
+          setFinalizeStep(1);
+
+          // Step 2: Grading
           const completedAttempt = await finishExamAttempt(attemptId);
+          setFinalizeStep(2);
+
+          // Step 3: Saving results
+          await new Promise(r => setTimeout(r, 500));
+          setFinalizeStep(3);
+
           sessionStorage.setItem('FINISHED_ATTEMPT', JSON.stringify(completedAttempt));
           sessionStorage.setItem('FINISHED_EXAM', JSON.stringify(exam));
+
+          // Step 4: Brief final pause for visual confirmation
+          await new Promise(r => setTimeout(r, 700));
           router.push('/exam/complete');
         }
       } catch (e) {
         console.error('Error submitting answer:', e);
+        isSubmittingRef.current = false;
         setSubmitting(false);
+        setFinalizingExam(false);
       }
     },
-    [submitting, exam, questions, currentIndex, selectedOption, attemptId, router]
+    [exam, questions, currentIndex, selectedOption, attemptId, router]
   );
 
   // Timer Setup
@@ -137,18 +166,33 @@ export default function ExamRunnerPage({
     ? (exam?.timerSeconds || 60) 
     : (exam?.timerSeconds || 3600);
 
-  const { formattedTime, progressPercent, isUrgent, resetTimer } = useTimer({
+  const { formattedTime, progressPercent, isUrgent, resetTimer, pauseTimer } = useTimer({
     initialSeconds: timerDuration,
     onExpire: () => {
+      if (isSubmittingRef.current) return; // already submitting, ignore
       if (exam?.timerMode === 'per_question') {
         submitCurrentAnswer(true);
       } else {
-        // Whole exam timer expired -> auto finish
-        finishExamAttempt(attemptId).then((completed) => {
-          sessionStorage.setItem('FINISHED_ATTEMPT', JSON.stringify(completed));
-          sessionStorage.setItem('FINISHED_EXAM', JSON.stringify(exam));
-          router.push('/exam/complete');
-        });
+        // Whole exam timer expired -> guard and auto finish
+        if (isSubmittingRef.current) return;
+        isSubmittingRef.current = true;
+        setFinalizingExam(true);
+        setFinalizeStep(0);
+        finishExamAttempt(attemptId)
+          .then(async (completed) => {
+            setFinalizeStep(2);
+            await new Promise(r => setTimeout(r, 500));
+            setFinalizeStep(3);
+            sessionStorage.setItem('FINISHED_ATTEMPT', JSON.stringify(completed));
+            sessionStorage.setItem('FINISHED_EXAM', JSON.stringify(exam));
+            await new Promise(r => setTimeout(r, 700));
+            router.push('/exam/complete');
+          })
+          .catch(err => {
+            console.error('Timer auto-finish error:', err);
+            isSubmittingRef.current = false;
+            setFinalizingExam(false);
+          });
       }
     },
     autoStart: !loading && Boolean(exam),
@@ -225,6 +269,14 @@ export default function ExamRunnerPage({
   const totalQ = questions.length;
   const progressRatio = ((currentIndex + 1) / totalQ) * 100;
 
+  // Steps shown in the final-submit loading overlay
+  const FINALIZE_STEPS = [
+    { label: 'Securing your responses…', icon: '🔒' },
+    { label: 'Locking answers…',         icon: '📋' },
+    { label: 'Auto-grading exam…',       icon: '🧮' },
+    { label: 'Saving results…',          icon: '💾' },
+  ];
+
   return (
     <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col select-none">
       {/* Top Runner HUD */}
@@ -278,6 +330,54 @@ export default function ExamRunnerPage({
           </div>
         </div>
       </header>
+
+      {/* ═══════════════════════════════════════════════════════
+          Full-Screen Final Submission Loading Overlay
+      ═══════════════════════════════════════════════════════ */}
+      {finalizingExam && (
+        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#090d16]/95 backdrop-blur-xl">
+          {/* Animated ring */}
+          <div className="relative mb-8">
+            <div className="h-24 w-24 rounded-full border-4 border-indigo-500/20 flex items-center justify-center">
+              <Loader2 className="h-10 w-10 text-indigo-400 animate-spin" />
+            </div>
+            {/* Outer pulse ring */}
+            <div className="absolute inset-0 rounded-full border-4 border-indigo-500/40 animate-ping" />
+          </div>
+
+          <h2 className="text-xl sm:text-2xl font-extrabold text-white mb-1 tracking-tight">
+            Submitting Your Exam
+          </h2>
+          <p className="text-xs text-slate-400 mb-8 text-center max-w-xs">
+            Please wait — do not close this tab or press the back button.
+          </p>
+
+          {/* Step progress list */}
+          <div className="w-full max-w-xs space-y-3">
+            {FINALIZE_STEPS.map((step, idx) => {
+              const isDone    = idx < finalizeStep;
+              const isActive  = idx === finalizeStep;
+              return (
+                <div
+                  key={idx}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-500 ${
+                    isDone
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : isActive
+                        ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-200 animate-pulse'
+                        : 'bg-slate-900/50 border-slate-800 text-slate-600'
+                  }`}
+                >
+                  <span className="text-base">
+                    {isDone ? '✅' : isActive ? <Loader2 className="h-4 w-4 animate-spin" /> : step.icon}
+                  </span>
+                  <span className="text-sm font-medium">{step.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Full-Screen Violation Warning Modal */}
       {violationAlert && (
@@ -415,7 +515,7 @@ export default function ExamRunnerPage({
             {/* Skip Question Button (No prompt alert) */}
             <button
               type="button"
-              disabled={submitting}
+              disabled={submitting || finalizingExam}
               onClick={() => submitCurrentAnswer(false, true)}
               className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-3.5 px-5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs sm:text-sm font-semibold transition-all disabled:opacity-50"
               title="Skip this question without answering"
@@ -427,12 +527,12 @@ export default function ExamRunnerPage({
             {/* Submit & Next Button (Requires selection) */}
             <button
               type="button"
-              disabled={submitting || !selectedOption}
+              disabled={submitting || !selectedOption || finalizingExam}
               onClick={() => submitCurrentAnswer(false, false)}
               className="flex-1 sm:flex-initial flex items-center justify-center gap-2 py-3.5 px-6 sm:px-8 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs sm:text-sm shadow-xl shadow-indigo-600/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {submitting ? (
-                'Submitting...'
+                <><Loader2 className="h-4 w-4 animate-spin" /><span>Submitting…</span></>
               ) : currentIndex + 1 === totalQ ? (
                 'Submit Final Answer & Finish Exam'
               ) : (
