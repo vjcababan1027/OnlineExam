@@ -48,6 +48,7 @@ export default function ExamRunnerPage({
   // Controls the final-submission full-screen loading overlay
   const [finalizingExam, setFinalizingExam] = useState(false);
   const [finalizeStep, setFinalizeStep] = useState(0);
+  const [examError, setExamError] = useState<string | null>(null);
   const [violationAlert, setViolationAlert] = useState<{ type: string; count: number; deduction: number; details?: string } | null>(null);
 
   // Time used tracker for current question
@@ -131,23 +132,36 @@ export default function ExamRunnerPage({
           // Last Question -> show loading overlay then finish & grade exam
           setFinalizingExam(true);
           setFinalizeStep(0);
+          setExamError(null);
 
           // Step 1: Securing responses
           await new Promise(r => setTimeout(r, 600));
           setFinalizeStep(1);
 
-          // Step 2: Grading
-          const completedAttempt = await finishExamAttempt(attemptId);
-          setFinalizeStep(2);
+          // Step 2: Grading — attempt finalize, then navigate regardless
+          let completedAttempt: Awaited<ReturnType<typeof finishExamAttempt>> | null = null;
+          try {
+            completedAttempt = await finishExamAttempt(attemptId);
+          } catch (finishErr) {
+            console.error('finishExamAttempt error:', finishErr);
+            // Even if grading failed server-side, attempt may have been marked
+            // submitted already — still navigate but show a warning
+            setExamError(
+              'There was an issue finalizing your exam. Your answers have been saved. Please contact your instructor if your results are not reflected.'
+            );
+          }
 
-          // Step 3: Saving results
+          setFinalizeStep(2);
           await new Promise(r => setTimeout(r, 500));
           setFinalizeStep(3);
 
-          sessionStorage.setItem('FINISHED_ATTEMPT', JSON.stringify(completedAttempt));
+          // Store whatever we have (null-safe)
+          if (completedAttempt) {
+            sessionStorage.setItem('FINISHED_ATTEMPT', JSON.stringify(completedAttempt));
+          }
           sessionStorage.setItem('FINISHED_EXAM', JSON.stringify(exam));
 
-          // Step 4: Brief final pause for visual confirmation
+          // Brief final pause for visual confirmation
           await new Promise(r => setTimeout(r, 700));
           router.push('/exam/complete');
         }
@@ -156,6 +170,7 @@ export default function ExamRunnerPage({
         isSubmittingRef.current = false;
         setSubmitting(false);
         setFinalizingExam(false);
+        setExamError('Something went wrong while submitting. Please try again.');
       }
     },
     [exam, questions, currentIndex, selectedOption, attemptId, router]
@@ -375,6 +390,28 @@ export default function ExamRunnerPage({
                 </div>
               );
             })}
+          </div>
+
+          {/* Error notice (shown inline without closing the overlay) */}
+          {examError && (
+            <div className="mt-6 w-full max-w-xs px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs text-center">
+              ⚠️ {examError}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Inline error banner (shown when not in finalizing overlay) */}
+      {examError && !finalizingExam && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-full px-4">
+          <div className="px-5 py-3.5 rounded-xl bg-rose-950/90 border border-rose-500/50 text-rose-300 text-xs text-center shadow-2xl backdrop-blur-xl">
+            ⚠️ {examError}
+            <button
+              onClick={() => setExamError(null)}
+              className="ml-3 text-rose-400 hover:text-rose-200 font-bold"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}
