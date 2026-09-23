@@ -3,7 +3,7 @@
 import { useState, useEffect, use } from 'react';
 import Link from 'next/link';
 import { Navbar } from '@/components/shared/Navbar';
-import { getExam, getAttempt, getExamQuestions, getExamResultsWithDetails, getExamAnswerKeys } from '@/lib/firebase/db';
+import { getExam, getAttempt, getExamQuestions, getExamResultsWithDetails, getExamAnswerKeys, approveAttempt, rejectAttempt } from '@/lib/firebase/db';
 import { Exam, Attempt, Question, StudentAnswer, Violation, AnswerKey } from '@/lib/types';
 import { 
   ArrowLeft, 
@@ -14,7 +14,12 @@ import {
   ShieldAlert, 
   User, 
   HelpCircle,
-  Sparkles
+  Sparkles,
+  ThumbsUp,
+  ThumbsDown,
+  Loader2,
+  ShieldCheck,
+  X
 } from 'lucide-react';
 
 export default function AttemptInspectorPage({
@@ -32,6 +37,11 @@ export default function AttemptInspectorPage({
   const [violations, setViolations] = useState<Violation[]>([]);
   const [answerKeys, setAnswerKeys] = useState<Record<string, AnswerKey>>({});
   const [loading, setLoading] = useState(true);
+
+  // Review action state
+  const [reviewing, setReviewing] = useState(false);
+  const [showRejectBox, setShowRejectBox] = useState(false);
+  const [rejectNote, setRejectNote] = useState('');
 
   useEffect(() => {
     async function loadData() {
@@ -60,6 +70,36 @@ export default function AttemptInspectorPage({
     }
     loadData();
   }, [examId, attemptId]);
+
+  const handleApprove = async () => {
+    if (!attempt) return;
+    setReviewing(true);
+    try {
+      await approveAttempt(attempt.id);
+      setAttempt(prev => prev ? { ...prev, reviewStatus: 'APPROVED' } : prev);
+    } catch (e) {
+      console.error(e);
+      alert('Failed to approve.');
+    } finally {
+      setReviewing(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!attempt) return;
+    setReviewing(true);
+    try {
+      await rejectAttempt(attempt.id, rejectNote || 'Flagged for further review.');
+      setAttempt(prev => prev ? { ...prev, reviewStatus: 'REJECTED', reviewNote: rejectNote } : prev);
+      setShowRejectBox(false);
+      setRejectNote('');
+    } catch (e) {
+      console.error(e);
+      alert('Failed to reject.');
+    } finally {
+      setReviewing(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -103,6 +143,96 @@ export default function AttemptInspectorPage({
             Attempt ID: {attempt.id}
           </span>
         </div>
+
+        {/* Review Status & Action Bar */}
+        {(attempt.status === 'SUBMITTED' || attempt.status === 'LOCKED') && (
+          <div className={`rounded-2xl p-5 border space-y-4 ${
+            attempt.reviewStatus === 'APPROVED'
+              ? 'bg-emerald-950/20 border-emerald-500/30'
+              : attempt.reviewStatus === 'REJECTED'
+              ? 'bg-rose-950/20 border-rose-500/30'
+              : 'bg-amber-950/20 border-amber-500/30'
+          }`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                {attempt.reviewStatus === 'APPROVED' ? (
+                  <><ShieldCheck className="h-5 w-5 text-emerald-400" />
+                  <span className="text-sm font-bold text-emerald-400">Result Approved</span></>
+                ) : attempt.reviewStatus === 'REJECTED' ? (
+                  <><X className="h-5 w-5 text-rose-400" />
+                  <span className="text-sm font-bold text-rose-400">Result Rejected / Flagged</span></>
+                ) : (
+                  <><Clock className="h-5 w-5 text-amber-400" />
+                  <span className="text-sm font-bold text-amber-400">Pending Your Review</span></>
+                )}
+              </div>
+
+              {/* Action Buttons — only visible when pending */}
+              {(!attempt.reviewStatus || attempt.reviewStatus === 'PENDING_REVIEW') && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleApprove}
+                    disabled={reviewing}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors disabled:opacity-60 shadow-lg shadow-emerald-600/20"
+                  >
+                    {reviewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ThumbsUp className="h-3.5 w-3.5" />}
+                    Approve Result
+                  </button>
+                  <button
+                    onClick={() => setShowRejectBox(v => !v)}
+                    disabled={reviewing}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-colors disabled:opacity-60 shadow-lg shadow-rose-600/20"
+                  >
+                    <ThumbsDown className="h-3.5 w-3.5" />
+                    Reject / Flag
+                  </button>
+                </div>
+              )}
+
+              {/* Re-approve if rejected */}
+              {attempt.reviewStatus === 'REJECTED' && (
+                <button
+                  onClick={handleApprove}
+                  disabled={reviewing}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors disabled:opacity-60"
+                >
+                  {reviewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ThumbsUp className="h-3.5 w-3.5" />}
+                  Approve Instead
+                </button>
+              )}
+            </div>
+
+            {/* Reject note input */}
+            {showRejectBox && (
+              <div className="space-y-2 pt-1">
+                <label className="text-xs font-semibold text-slate-300">Rejection Reason (optional)</label>
+                <textarea
+                  rows={2}
+                  value={rejectNote}
+                  onChange={e => setRejectNote(e.target.value)}
+                  placeholder="e.g. Suspected academic dishonesty — please see instructor."
+                  className="w-full rounded-xl bg-slate-900 border border-slate-700 text-slate-100 text-xs p-3 focus:outline-none focus:border-rose-500/60 resize-none placeholder-slate-600"
+                />
+                <button
+                  onClick={handleReject}
+                  disabled={reviewing}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-colors disabled:opacity-60"
+                >
+                  {reviewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ThumbsDown className="h-3.5 w-3.5" />}
+                  Confirm Rejection
+                </button>
+              </div>
+            )}
+
+            {/* Show rejection note if already rejected */}
+            {attempt.reviewStatus === 'REJECTED' && attempt.reviewNote && (
+              <div className="px-3 py-2.5 rounded-xl bg-rose-900/20 border border-rose-500/20 text-rose-200 text-xs">
+                <span className="font-bold block mb-0.5">Rejection Note:</span>
+                {attempt.reviewNote}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Student Summary Card */}
         <div className="glass-card rounded-2xl p-6 sm:p-8 space-y-6 border-slate-800">

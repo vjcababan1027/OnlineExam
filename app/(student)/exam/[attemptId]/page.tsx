@@ -134,36 +134,55 @@ export default function ExamRunnerPage({
           setFinalizeStep(0);
           setExamError(null);
 
-          // Step 1: Securing responses
-          await new Promise(r => setTimeout(r, 600));
-          setFinalizeStep(1);
+          // 10-second fallback: if finishExamAttempt hangs, navigate anyway
+          const fallbackTimer = setTimeout(() => {
+            console.warn('finishExamAttempt timed out — navigating to complete page anyway');
+            sessionStorage.setItem('FINISHED_EXAM', JSON.stringify(exam));
+            router.push('/exam/complete');
+          }, 10000);
 
-          // Step 2: Grading — attempt finalize, then navigate regardless
-          let completedAttempt: Awaited<ReturnType<typeof finishExamAttempt>> | null = null;
           try {
-            completedAttempt = await finishExamAttempt(attemptId);
-          } catch (finishErr) {
-            console.error('finishExamAttempt error:', finishErr);
-            // Even if grading failed server-side, attempt may have been marked
-            // submitted already — still navigate but show a warning
-            setExamError(
-              'There was an issue finalizing your exam. Your answers have been saved. Please contact your instructor if your results are not reflected.'
-            );
+            // Step 1: Securing responses
+            await new Promise(r => setTimeout(r, 600));
+            setFinalizeStep(1);
+
+            // Step 2: Grading
+            let completedAttempt: Awaited<ReturnType<typeof finishExamAttempt>> | null = null;
+            try {
+              completedAttempt = await finishExamAttempt(attemptId);
+            } catch (finishErr) {
+              console.error('finishExamAttempt error:', finishErr);
+              setExamError(
+                'There was an issue finalizing your exam. Your answers have been saved. Please contact your instructor if your results are not reflected.'
+              );
+            }
+
+            setFinalizeStep(2);
+            await new Promise(r => setTimeout(r, 500));
+            setFinalizeStep(3);
+
+            // Store whatever we have (null-safe)
+            if (completedAttempt) {
+              sessionStorage.setItem('FINISHED_ATTEMPT', JSON.stringify(completedAttempt));
+            }
+            sessionStorage.setItem('FINISHED_EXAM', JSON.stringify(exam));
+
+            // Brief final pause for visual confirmation
+            await new Promise(r => setTimeout(r, 700));
+
+            clearTimeout(fallbackTimer);
+            router.push('/exam/complete');
+          } catch (finalizeErr) {
+            clearTimeout(fallbackTimer);
+            console.error('Finalize block error:', finalizeErr);
+            // Navigate anyway — student's answers are already recorded
+            sessionStorage.setItem('FINISHED_EXAM', JSON.stringify(exam));
+            router.push('/exam/complete');
+          } finally {
+            // Always unlock the ref when the final-question path ends
+            isSubmittingRef.current = false;
+            setSubmitting(false);
           }
-
-          setFinalizeStep(2);
-          await new Promise(r => setTimeout(r, 500));
-          setFinalizeStep(3);
-
-          // Store whatever we have (null-safe)
-          if (completedAttempt) {
-            sessionStorage.setItem('FINISHED_ATTEMPT', JSON.stringify(completedAttempt));
-          }
-          sessionStorage.setItem('FINISHED_EXAM', JSON.stringify(exam));
-
-          // Brief final pause for visual confirmation
-          await new Promise(r => setTimeout(r, 700));
-          router.push('/exam/complete');
         }
       } catch (e) {
         console.error('Error submitting answer:', e);

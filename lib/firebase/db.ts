@@ -24,7 +24,8 @@ import {
   Violation,
   ViolationType,
   AuditLog,
-  UserProfile
+  UserProfile,
+  ReviewStatus
 } from '../types';
 
 // ==========================================
@@ -666,7 +667,9 @@ export async function finishExamAttempt(attemptId: string): Promise<Attempt> {
     const answerKeysMap: Record<string, AnswerKey> = {};
     answerKeysSnap.docs.forEach(d => {
       const k = d.data() as AnswerKey;
+      // Key by both the questionId field AND the document id to ensure reliable lookup
       answerKeysMap[k.questionId] = k;
+      answerKeysMap[d.id] = k;
     });
 
     const answersSnap = await getDocs(collection(db, 'attempts', attemptId, 'answers'));
@@ -676,9 +679,10 @@ export async function finishExamAttempt(attemptId: string): Promise<Attempt> {
     const batch = writeBatch(db);
     answersSnap.docs.forEach(d => {
       const ans = d.data() as StudentAnswer;
-      const key = answerKeysMap[ans.questionId];
+      // Try questionId first, then fall back to document id
+      const key = answerKeysMap[ans.questionId] || answerKeysMap[d.id];
       if (key) {
-        const isCorrect = ans.answer.toUpperCase() === key.answer.toUpperCase();
+        const isCorrect = ans.answer.trim().toUpperCase() === key.answer.trim().toUpperCase();
         const pointsAwarded = isCorrect ? key.points : 0;
         rawScore += pointsAwarded;
         batch.update(d.ref, { isCorrect, pointsAwarded });
@@ -693,6 +697,7 @@ export async function finishExamAttempt(attemptId: string): Promise<Attempt> {
 
     const updatedData = {
       status: (isLocked ? 'LOCKED' : 'SUBMITTED') as 'LOCKED' | 'SUBMITTED',
+      reviewStatus: 'PENDING_REVIEW' as ReviewStatus,
       finishedAt: now,
       rawScore,
       maxScore,
@@ -722,9 +727,13 @@ export async function finishExamAttempt(attemptId: string): Promise<Attempt> {
     let maxScore = exam ? exam.totalPoints : 0;
 
     Object.values(answers).forEach(ans => {
-      const key = answerKeys[ans.questionId];
+      // Try direct questionId lookup; if missing, scan all keys for a match by questionId field
+      let key = answerKeys[ans.questionId];
+      if (!key) {
+        key = Object.values(answerKeys).find(k => k.questionId === ans.questionId) || undefined as unknown as AnswerKey;
+      }
       if (key) {
-        const isCorrect = ans.answer.toUpperCase() === key.answer.toUpperCase();
+        const isCorrect = ans.answer.trim().toUpperCase() === key.answer.trim().toUpperCase();
         const points = isCorrect ? key.points : 0;
         ans.isCorrect = isCorrect;
         ans.pointsAwarded = points;
@@ -739,6 +748,7 @@ export async function finishExamAttempt(attemptId: string): Promise<Attempt> {
     const isLocked = (att.violationCount || 0) >= (exam?.maxViolations || 3);
 
     att.status = isLocked ? 'LOCKED' : 'SUBMITTED';
+    att.reviewStatus = 'PENDING_REVIEW';
     att.finishedAt = now;
     att.rawScore = rawScore;
     att.maxScore = maxScore;
@@ -821,6 +831,55 @@ export function subscribeToExam(
       }
     };
   }
+}
+
+// ------------------------------------------
+// Teacher Review: Approve / Reject Attempts
+// ------------------------------------------
+export async function approveAttempt(attemptId: string, reviewNote?: string): Promise<void> {
+  const now = new Date().toISOString();
+  if (isFirebaseConfigured && db) {
+    await updateDoc(doc(db, 'attempts', attemptId), {
+      reviewStatus: 'APPROVED',
+      reviewNote: reviewNote || '',
+      reviewedAt: now,
+      updatedAt: serverTimestamp()
+    });
+  } else {
+    const mock = loadMockDb();
+    if (mock.attempts[attemptId]) {
+      mock.attempts[attemptId].reviewStatus = 'APPROVED';
+      mock.attempts[attemptId].reviewNote = reviewNote || '';
+      mock.attempts[attemptId].reviewedAt = now;
+      mock.attempts[attemptId].updatedAt = now;
+      saveMockDb(mock);
+    }
+  }
+}
+
+export async function rejectAttempt(attemptId: string, reviewNote: string): Promise<void> {
+  const now = new Date().toISOString();
+  if (isFirebaseConfigured && db) {
+    await updateDoc(doc(db, 'attempts', attemptId), {
+      reviewStatus: 'REJECTED',
+      reviewNote,
+      reviewedAt: now,
+      updatedAt: serverTimestamp()
+    });
+  } else {
+    const mock = loadMockDb();
+    if (mock.attempts[attemptId]) {
+      mock.attempts[attemptId].reviewStatus = 'REJECTED';
+      mock.attempts[attemptId].reviewNote = reviewNote;
+      mock.attempts[attemptId].reviewedAt = now;
+      mock.attempts[attemptId].updatedAt = now;
+      saveMockDb(mock);
+    }
+  }
+}
+
+export async function bulkApproveAttempts(attemptIds: string[]): Promise<void> {
+  await Promise.all(attemptIds.map(id => approveAttempt(id)));
 }
 
 export async function getExamResultsWithDetails(examId: string) {

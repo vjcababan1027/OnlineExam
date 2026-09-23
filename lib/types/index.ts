@@ -69,6 +69,7 @@ export interface AnswerKey {
 }
 
 export type AttemptStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'SUBMITTED' | 'LOCKED';
+export type ReviewStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
 
 export interface Attempt {
   id: string;
@@ -87,6 +88,9 @@ export interface Attempt {
   percentage: number;
   violationCount: number;
   answersSubmitted: number;
+  reviewStatus?: ReviewStatus;
+  reviewNote?: string;
+  reviewedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

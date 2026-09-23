@@ -8,11 +8,12 @@ import { Attempt, Exam } from '@/lib/types';
 import { 
   CheckCircle2, 
   Sparkles, 
-  ArrowRight, 
   ShieldCheck, 
   AlertTriangle, 
   Clock,
-  Home
+  Home,
+  XCircle,
+  Eye
 } from 'lucide-react';
 
 export default function ExamCompletePage() {
@@ -37,7 +38,17 @@ export default function ExamCompletePage() {
     }
   }, []);
 
-  const showScores = exam?.showScoreImmediately ?? true;
+  const reviewStatus = attempt?.reviewStatus;
+  // Show scores only if: immediately allowed AND result is approved (or no review flow used)
+  const showScores =
+    (exam?.showScoreImmediately ?? true) &&
+    (reviewStatus === 'APPROVED' || reviewStatus === undefined || reviewStatus === null);
+
+  const isPendingReview =
+    reviewStatus === 'PENDING_REVIEW' ||
+    (!exam?.showScoreImmediately && reviewStatus !== 'APPROVED' && reviewStatus !== 'REJECTED');
+
+  const isRejected = reviewStatus === 'REJECTED';
 
   return (
     <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col">
@@ -64,9 +75,17 @@ export default function ExamCompletePage() {
               </p>
             </div>
 
-            {/* Score Breakdown (if allowed by teacher) */}
-            {attempt && showScores ? (
+            {/* ── Approved: show full score breakdown ── */}
+            {attempt && showScores && (
               <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-4 text-left">
+                {/* Approval badge */}
+                {reviewStatus === 'APPROVED' && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold mb-1">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    <span>Results officially approved by your instructor.</span>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                   <span className="text-xs text-slate-400 font-medium">Final Percentage</span>
                   <span className="text-2xl font-extrabold text-emerald-400 font-mono">
@@ -98,7 +117,48 @@ export default function ExamCompletePage() {
                   </div>
                 )}
               </div>
-            ) : (
+            )}
+
+            {/* ── Pending Review ── */}
+            {isPendingReview && !isRejected && (
+              <div className="p-5 rounded-2xl bg-amber-950/30 border border-amber-500/30 space-y-3 text-left">
+                <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
+                  <Clock className="h-5 w-5 shrink-0" />
+                  <span>Pending Instructor Review</span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Your responses have been saved and auto-graded. Your instructor is currently
+                  reviewing and verifying the results before they are officially published.
+                </p>
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] font-medium">
+                  <Eye className="h-3.5 w-3.5 shrink-0" />
+                  <span>You will be notified once your results have been approved.</span>
+                </div>
+              </div>
+            )}
+
+            {/* ── Rejected / Flagged ── */}
+            {isRejected && (
+              <div className="p-5 rounded-2xl bg-rose-950/30 border border-rose-500/30 space-y-3 text-left">
+                <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
+                  <XCircle className="h-5 w-5 shrink-0" />
+                  <span>Result Flagged for Further Review</span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Your instructor has flagged this attempt for additional review. Please contact
+                  your instructor directly for more information.
+                </p>
+                {attempt?.reviewNote && (
+                  <div className="px-3 py-2.5 rounded-xl bg-rose-900/30 border border-rose-500/20 text-rose-200 text-xs">
+                    <span className="font-bold block mb-0.5">Instructor Note:</span>
+                    {attempt.reviewNote}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Score hidden (legacy showScoreImmediately = false, no review flow) ── */}
+            {!attempt && (
               <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 text-xs text-slate-300 space-y-1 text-left">
                 <div className="font-bold text-white flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-emerald-400" />
