@@ -134,12 +134,21 @@ export default function ExamRunnerPage({
           setFinalizeStep(0);
           setExamError(null);
 
-          // 10-second fallback: if finishExamAttempt hangs, navigate anyway
-          const fallbackTimer = setTimeout(() => {
-            console.warn('finishExamAttempt timed out — navigating to complete page anyway');
+          // 15-second fallback: if finishExamAttempt hangs, force-finish via API then navigate
+          const fallbackTimer = setTimeout(async () => {
+            console.warn('finishExamAttempt timed out — force-finishing via API before navigating');
+            try {
+              await fetch('/api/exam/finish', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ attemptId }),
+              });
+            } catch (fallbackErr) {
+              console.error('Fallback finish API call also failed:', fallbackErr);
+            }
             sessionStorage.setItem('FINISHED_EXAM', JSON.stringify(exam));
             router.push('/exam/complete');
-          }, 10000);
+          }, 15000);
 
           try {
             // Step 1: Securing responses

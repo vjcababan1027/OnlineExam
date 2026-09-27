@@ -30,7 +30,9 @@ import {
   X,
   Loader2,
   ShieldCheck,
-  CheckCheck
+  CheckCheck,
+  RefreshCw,
+  RotateCcw
 } from 'lucide-react';
 
 export default function ExamResultsPage({ params }: { params: Promise<{ examId: string }> }) {
@@ -48,6 +50,8 @@ export default function ExamResultsPage({ params }: { params: Promise<{ examId: 
   const [rejectModal, setRejectModal] = useState<{ attemptId: string; studentName: string } | null>(null);
   const [rejectNote, setRejectNote] = useState('');
   const [bulkApproving, setBulkApproving] = useState(false);
+  const [regradingId, setRegradingId] = useState<string | null>(null);
+  const [retakingId, setRetakingId] = useState<string | null>(null);
 
   // Active tab: 'all' | 'pending' | 'approved' | 'rejected'
   const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
@@ -149,6 +153,51 @@ export default function ExamResultsPage({ params }: { params: Promise<{ examId: 
       alert('Bulk approve failed. Please try again.');
     } finally {
       setBulkApproving(false);
+    }
+  };
+
+  const handleRegrade = async (attemptId: string) => {
+    setRegradingId(attemptId);
+    try {
+      const res = await fetch('/api/exam/regrade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attemptId }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        alert(`Re-grade failed: ${data.message}`);
+      }
+      // The live subscription will auto-update the UI
+    } catch (e) {
+      console.error(e);
+      alert('Re-grade request failed. Please try again.');
+    } finally {
+      setRegradingId(null);
+    }
+  };
+
+  const handleAllowRetake = async (attemptId: string, studentName: string) => {
+    if (!confirm(`Are you sure you want to allow ${studentName} to retake the exam? This will clear their current attempt and recorded answers so they can start fresh.`)) {
+      return;
+    }
+    setRetakingId(attemptId);
+    try {
+      const res = await fetch('/api/exam/retake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attemptId }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        alert(`Allow Retake failed: ${data.message}`);
+      }
+      // Live subscription will update attempts automatically
+    } catch (e) {
+      console.error(e);
+      alert('Allow Retake request failed. Please try again.');
+    } finally {
+      setRetakingId(null);
     }
   };
 
@@ -499,7 +548,39 @@ export default function ExamResultsPage({ params }: { params: Promise<{ examId: 
                         )}
                       </td>
                       <td className="py-3 px-3.5 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          {/* Re-grade / Force Finish button — for any attempt with an id */}
+                          {att && (
+                            <button
+                              onClick={() => handleRegrade(att.id)}
+                              disabled={regradingId === att.id}
+                              title={att.status === 'IN_PROGRESS' ? 'Force finish & grade this attempt' : 'Re-calculate the score for this attempt'}
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/25 text-amber-400 text-xs font-semibold transition-colors disabled:opacity-50"
+                            >
+                              {regradingId === att.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-3.5 w-3.5" />
+                              )}
+                              {att.status === 'IN_PROGRESS' ? 'Force Finish' : 'Re-grade'}
+                            </button>
+                          )}
+                          {/* Allow Retake button — resets the attempt so the student can re-take */}
+                          {att && (
+                            <button
+                              onClick={() => handleAllowRetake(att.id, st.name)}
+                              disabled={retakingId === att.id}
+                              title="Reset attempt and allow student to retake the exam"
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-500/10 hover:bg-purple-500/25 text-purple-400 text-xs font-semibold transition-colors disabled:opacity-50"
+                            >
+                              {retakingId === att.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <RotateCcw className="h-3.5 w-3.5" />
+                              )}
+                              Allow Retake
+                            </button>
+                          )}
                           {/* Approve button — only for pending */}
                           {isPending && att && (
                             <button

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, use } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Navbar } from '@/components/shared/Navbar';
 import { getExam, getAttempt, getExamQuestions, getExamResultsWithDetails, getExamAnswerKeys, approveAttempt, rejectAttempt } from '@/lib/firebase/db';
 import { Exam, Attempt, Question, StudentAnswer, Violation, AnswerKey } from '@/lib/types';
@@ -19,7 +20,8 @@ import {
   ThumbsDown,
   Loader2,
   ShieldCheck,
-  X
+  X,
+  RotateCcw
 } from 'lucide-react';
 
 export default function AttemptInspectorPage({
@@ -29,6 +31,7 @@ export default function AttemptInspectorPage({
 }) {
   const resolvedParams = use(params);
   const { examId, attemptId } = resolvedParams;
+  const router = useRouter();
 
   const [exam, setExam] = useState<Exam | null>(null);
   const [attempt, setAttempt] = useState<Attempt | null>(null);
@@ -40,6 +43,7 @@ export default function AttemptInspectorPage({
 
   // Review action state
   const [reviewing, setReviewing] = useState(false);
+  const [retaking, setRetaking] = useState(false);
   const [showRejectBox, setShowRejectBox] = useState(false);
   const [rejectNote, setRejectNote] = useState('');
 
@@ -101,6 +105,33 @@ export default function AttemptInspectorPage({
     }
   };
 
+  const handleAllowRetake = async () => {
+    if (!attempt) return;
+    if (!confirm(`Are you sure you want to allow ${attempt.studentName} to retake the exam? This will delete their current attempt, recorded answers, and score so they can start fresh.`)) {
+      return;
+    }
+    setRetaking(true);
+    try {
+      const res = await fetch('/api/exam/retake', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attemptId: attempt.id }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        alert(`Allow Retake failed: ${data.message}`);
+      } else {
+        alert(`Retake granted for ${attempt.studentName}. Redirecting to live results...`);
+        router.push(`/teacher/exams/${examId}/results`);
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Allow Retake request failed.');
+    } finally {
+      setRetaking(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col">
@@ -139,9 +170,20 @@ export default function AttemptInspectorPage({
             Back to Live Results
           </Link>
 
-          <span className="text-xs text-indigo-400 font-mono font-semibold px-2.5 py-1 rounded bg-indigo-500/10 border border-indigo-500/20">
-            Attempt ID: {attempt.id}
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleAllowRetake}
+              disabled={retaking}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 text-xs font-semibold transition-colors disabled:opacity-50"
+              title="Delete this attempt and allow the student to retake"
+            >
+              {retaking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+              Allow Retake
+            </button>
+            <span className="text-xs text-indigo-400 font-mono font-semibold px-2.5 py-1 rounded bg-indigo-500/10 border border-indigo-500/20">
+              Attempt ID: {attempt.id}
+            </span>
+          </div>
         </div>
 
         {/* Review Status & Action Bar */}

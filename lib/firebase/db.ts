@@ -650,6 +650,50 @@ export async function logExamViolation(
 }
 
 // ------------------------------------------
+// Teacher: Allow Retake (reset a student's attempt)
+// ------------------------------------------
+export async function resetStudentAttempt(examId: string, studentId: string): Promise<void> {
+  if (isFirebaseConfigured && db) {
+    // Find the student's attempt(s) for this exam
+    const q = query(
+      collection(db, 'attempts'),
+      where('examId', '==', examId),
+      where('studentId', '==', studentId)
+    );
+    const snap = await getDocs(q);
+
+    for (const attDoc of snap.docs) {
+      // Delete answers sub-collection
+      const answersSnap = await getDocs(collection(db, 'attempts', attDoc.id, 'answers'));
+      const aBatch = writeBatch(db);
+      answersSnap.docs.forEach(d => aBatch.delete(d.ref));
+      if (!answersSnap.empty) await aBatch.commit();
+
+      // Delete violations sub-collection
+      const violationsSnap = await getDocs(collection(db, 'attempts', attDoc.id, 'violations'));
+      const vBatch = writeBatch(db);
+      violationsSnap.docs.forEach(d => vBatch.delete(d.ref));
+      if (!violationsSnap.empty) await vBatch.commit();
+
+      // Delete the attempt document itself
+      await deleteDoc(attDoc.ref);
+    }
+  } else {
+    const mock = loadMockDb();
+    // Find and delete all attempts for this student on this exam
+    Object.keys(mock.attempts).forEach(attId => {
+      const att = mock.attempts[attId];
+      if (att.examId === examId && att.studentId === studentId) {
+        delete mock.attempts[attId];
+        delete mock.answers[attId];
+        delete mock.violations[attId];
+      }
+    });
+    saveMockDb(mock);
+  }
+}
+
+// ------------------------------------------
 // Server-Authoritative Grading & Finish
 // ------------------------------------------
 export async function finishExamAttempt(attemptId: string): Promise<Attempt> {
@@ -674,7 +718,11 @@ export async function finishExamAttempt(attemptId: string): Promise<Attempt> {
 
     const answersSnap = await getDocs(collection(db, 'attempts', attemptId, 'answers'));
     let rawScore = 0;
-    let maxScore = exam.totalPoints || 0;
+    // Use exam.totalPoints; if missing/zero, derive it by summing all answer key points
+    const derivedMax = Object.values(answerKeysMap)
+      .filter((v, i, arr) => arr.findIndex(x => x === v) === i) // deduplicate (keyed twice)
+      .reduce((sum, k) => sum + (k.points || 0), 0);
+    let maxScore = (exam.totalPoints && exam.totalPoints > 0) ? exam.totalPoints : derivedMax;
 
     const batch = writeBatch(db);
     answersSnap.docs.forEach(d => {
@@ -724,13 +772,15 @@ export async function finishExamAttempt(attemptId: string): Promise<Attempt> {
     const answers = mock.answers[attemptId] || {};
 
     let rawScore = 0;
-    let maxScore = exam ? exam.totalPoints : 0;
+    // Use exam.totalPoints; if missing/zero, derive it by summing all answer key points
+    const derivedMax = Object.values(answerKeys).reduce((sum, k) => sum + (k.points || 0), 0);
+    let maxScore = (exam && exam.totalPoints && exam.totalPoints > 0) ? exam.totalPoints : derivedMax;
 
     Object.values(answers).forEach(ans => {
       // Try direct questionId lookup; if missing, scan all keys for a match by questionId field
-      let key = answerKeys[ans.questionId];
+      let key: AnswerKey | undefined = answerKeys[ans.questionId];
       if (!key) {
-        key = Object.values(answerKeys).find(k => k.questionId === ans.questionId) || undefined as unknown as AnswerKey;
+        key = Object.values(answerKeys).find(k => k.questionId === ans.questionId);
       }
       if (key) {
         const isCorrect = ans.answer.trim().toUpperCase() === key.answer.trim().toUpperCase();
