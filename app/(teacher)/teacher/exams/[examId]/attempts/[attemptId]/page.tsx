@@ -4,7 +4,7 @@ import { useState, useEffect, use } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Navbar } from '@/components/shared/Navbar';
-import { getExam, getAttempt, getExamQuestions, getExamResultsWithDetails, getExamAnswerKeys, approveAttempt, rejectAttempt } from '@/lib/firebase/db';
+import { getExam, getAttempt, getExamQuestions, getExamResultsWithDetails, getExamAnswerKeys, approveAttempt, rejectAttempt, finishExamAttempt, resetStudentAttempt } from '@/lib/firebase/db';
 import { Exam, Attempt, Question, StudentAnswer, Violation, AnswerKey } from '@/lib/types';
 import { 
   ArrowLeft, 
@@ -21,7 +21,8 @@ import {
   Loader2,
   ShieldCheck,
   X,
-  RotateCcw
+  RotateCcw,
+  RefreshCw
 } from 'lucide-react';
 
 export default function AttemptInspectorPage({
@@ -44,6 +45,7 @@ export default function AttemptInspectorPage({
   // Review action state
   const [reviewing, setReviewing] = useState(false);
   const [retaking, setRetaking] = useState(false);
+  const [regrading, setRegrading] = useState(false);
   const [showRejectBox, setShowRejectBox] = useState(false);
   const [rejectNote, setRejectNote] = useState('');
 
@@ -105,6 +107,22 @@ export default function AttemptInspectorPage({
     }
   };
 
+  const handleRegrade = async () => {
+    if (!attempt) return;
+    setRegrading(true);
+    try {
+      const updated = await finishExamAttempt(attempt.id);
+      setAttempt(updated);
+      alert('Attempt successfully re-graded! Scores updated.');
+    } catch (e: unknown) {
+      console.error('Re-grade error:', e);
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      alert(`Re-grade failed: ${msg}`);
+    } finally {
+      setRegrading(false);
+    }
+  };
+
   const handleAllowRetake = async () => {
     if (!attempt) return;
     if (!confirm(`Are you sure you want to allow ${attempt.studentName} to retake the exam? This will delete their current attempt, recorded answers, and score so they can start fresh.`)) {
@@ -112,21 +130,13 @@ export default function AttemptInspectorPage({
     }
     setRetaking(true);
     try {
-      const res = await fetch('/api/exam/retake', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attemptId: attempt.id }),
-      });
-      const data = await res.json();
-      if (!data.success) {
-        alert(`Allow Retake failed: ${data.message}`);
-      } else {
-        alert(`Retake granted for ${attempt.studentName}. Redirecting to live results...`);
-        router.push(`/teacher/exams/${examId}/results`);
-      }
-    } catch (e) {
-      console.error(e);
-      alert('Allow Retake request failed.');
+      await resetStudentAttempt(examId, attempt.studentId);
+      alert(`Retake granted for ${attempt.studentName}. Redirecting to live results...`);
+      router.push(`/teacher/exams/${examId}/results`);
+    } catch (e: unknown) {
+      console.error('Allow Retake error:', e);
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      alert(`Allow Retake failed: ${msg}`);
     } finally {
       setRetaking(false);
     }
@@ -171,6 +181,15 @@ export default function AttemptInspectorPage({
           </Link>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleRegrade}
+              disabled={regrading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 text-xs font-semibold transition-colors disabled:opacity-50"
+              title="Re-calculate and verify score against answer keys"
+            >
+              {regrading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Re-grade
+            </button>
             <button
               onClick={handleAllowRetake}
               disabled={retaking}

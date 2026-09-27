@@ -8,7 +8,8 @@ import {
   getExamQuestions, 
   submitStudentAnswer, 
   logExamViolation, 
-  finishExamAttempt 
+  finishExamAttempt,
+  submitStudentExamAttempt 
 } from '@/lib/firebase/db';
 import { useTimer } from '@/lib/hooks/useTimer';
 import { useProctoring } from '@/lib/hooks/useProctoring';
@@ -134,17 +135,13 @@ export default function ExamRunnerPage({
           setFinalizeStep(0);
           setExamError(null);
 
-          // 15-second fallback: if finishExamAttempt hangs, force-finish via API then navigate
+          // 15-second fallback: ensure attempt is marked SUBMITTED before navigating
           const fallbackTimer = setTimeout(async () => {
-            console.warn('finishExamAttempt timed out — force-finishing via API before navigating');
+            console.warn('finalize timed out — ensuring attempt submission via direct db call');
             try {
-              await fetch('/api/exam/finish', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ attemptId }),
-              });
+              await submitStudentExamAttempt(attemptId);
             } catch (fallbackErr) {
-              console.error('Fallback finish API call also failed:', fallbackErr);
+              console.error('Fallback submit attempt failed:', fallbackErr);
             }
             sessionStorage.setItem('FINISHED_EXAM', JSON.stringify(exam));
             router.push('/exam/complete');
@@ -155,15 +152,16 @@ export default function ExamRunnerPage({
             await new Promise(r => setTimeout(r, 600));
             setFinalizeStep(1);
 
-            // Step 2: Grading
-            let completedAttempt: Awaited<ReturnType<typeof finishExamAttempt>> | null = null;
+            // Step 2: Finalize attempt submission (safe - does not require answer keys)
+            let completedAttempt = await submitStudentExamAttempt(attemptId);
+
+            // Try grading if answer keys are accessible
             try {
-              completedAttempt = await finishExamAttempt(attemptId);
-            } catch (finishErr) {
-              console.error('finishExamAttempt error:', finishErr);
-              setExamError(
-                'There was an issue finalizing your exam. Your answers have been saved. Please contact your instructor if your results are not reflected.'
-              );
+              const graded = await finishExamAttempt(attemptId);
+              if (graded) completedAttempt = graded;
+            } catch {
+              // Protected answer keys — will be graded by instructor dashboard
+              console.log('Submission recorded successfully. Awaiting instructor review/grading.');
             }
 
             setFinalizeStep(2);

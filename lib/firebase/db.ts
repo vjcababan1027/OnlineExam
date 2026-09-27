@@ -694,7 +694,57 @@ export async function resetStudentAttempt(examId: string, studentId: string): Pr
 }
 
 // ------------------------------------------
-// Server-Authoritative Grading & Finish
+// Student: Finalize & Submit Exam Attempt (Safe - No Answer Keys Required)
+// ------------------------------------------
+export async function submitStudentExamAttempt(attemptId: string): Promise<Attempt> {
+  const now = new Date().toISOString();
+
+  if (isFirebaseConfigured && db) {
+    const attemptRef = doc(db, 'attempts', attemptId);
+    const attemptSnap = await getDoc(attemptRef);
+    if (!attemptSnap.exists()) throw new Error('Attempt not found');
+    const att = attemptSnap.data() as Attempt;
+
+    const examSnap = await getDoc(doc(db, 'exams', att.examId));
+    const exam = examSnap.exists() ? (examSnap.data() as Exam) : null;
+
+    const answersSnap = await getDocs(collection(db, 'attempts', attemptId, 'answers'));
+    const answersSubmitted = answersSnap.size;
+
+    const isLocked = (att.violationCount || 0) >= (exam?.maxViolations || 3);
+
+    const updateData = {
+      status: (isLocked ? 'LOCKED' : 'SUBMITTED') as 'LOCKED' | 'SUBMITTED',
+      reviewStatus: (att.reviewStatus || 'PENDING_REVIEW') as ReviewStatus,
+      finishedAt: att.finishedAt || now,
+      answersSubmitted,
+      updatedAt: now
+    };
+
+    await updateDoc(attemptRef, {
+      ...updateData,
+      updatedAt: serverTimestamp()
+    });
+
+    return { ...att, ...updateData };
+  } else {
+    const mock = loadMockDb();
+    const att = mock.attempts[attemptId];
+    if (!att) throw new Error('Attempt not found');
+
+    const exam = mock.exams[att.examId];
+    const isLocked = (att.violationCount || 0) >= (exam?.maxViolations || 3);
+    att.status = isLocked ? 'LOCKED' : 'SUBMITTED';
+    att.reviewStatus = att.reviewStatus || 'PENDING_REVIEW';
+    att.finishedAt = att.finishedAt || now;
+    att.updatedAt = now;
+    saveMockDb(mock);
+    return att;
+  }
+}
+
+// ------------------------------------------
+// Authoritative Grading & Finish (Requires Answer Keys access)
 // ------------------------------------------
 export async function finishExamAttempt(attemptId: string): Promise<Attempt> {
   const now = new Date().toISOString();
@@ -745,13 +795,14 @@ export async function finishExamAttempt(attemptId: string): Promise<Attempt> {
 
     const updatedData = {
       status: (isLocked ? 'LOCKED' : 'SUBMITTED') as 'LOCKED' | 'SUBMITTED',
-      reviewStatus: 'PENDING_REVIEW' as ReviewStatus,
-      finishedAt: now,
+      reviewStatus: (att.reviewStatus || 'PENDING_REVIEW') as ReviewStatus,
+      finishedAt: att.finishedAt || now,
       rawScore,
       maxScore,
       deduction: totalDeduction,
       finalScore,
       percentage,
+      gradedAt: now,
       updatedAt: now
     };
 
@@ -798,13 +849,14 @@ export async function finishExamAttempt(attemptId: string): Promise<Attempt> {
     const isLocked = (att.violationCount || 0) >= (exam?.maxViolations || 3);
 
     att.status = isLocked ? 'LOCKED' : 'SUBMITTED';
-    att.reviewStatus = 'PENDING_REVIEW';
-    att.finishedAt = now;
+    att.reviewStatus = att.reviewStatus || 'PENDING_REVIEW';
+    att.finishedAt = att.finishedAt || now;
     att.rawScore = rawScore;
     att.maxScore = maxScore;
     att.deduction = totalDeduction;
     att.finalScore = finalScore;
     att.percentage = percentage;
+    att.gradedAt = now;
     att.updatedAt = now;
 
     saveMockDb(mock);

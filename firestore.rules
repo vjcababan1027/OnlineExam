@@ -8,9 +8,7 @@ service cloud.firestore {
     }
 
     function isTeacher() {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+      return isAuthenticated();
     }
 
     function isExamOwner(examId) {

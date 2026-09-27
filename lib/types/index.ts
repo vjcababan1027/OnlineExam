@@ -88,6 +88,7 @@ export interface Attempt {
   percentage: number;
   violationCount: number;
   answersSubmitted: number;
+  gradedAt?: string;
   reviewStatus?: ReviewStatus;
   reviewNote?: string;
   reviewedAt?: string;

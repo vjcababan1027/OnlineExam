@@ -10,7 +10,9 @@ import {
   getExamResultsWithDetails,
   approveAttempt,
   rejectAttempt,
-  bulkApproveAttempts
+  bulkApproveAttempts,
+  finishExamAttempt,
+  resetStudentAttempt
 } from '@/lib/firebase/db';
 import { exportToXLSX, exportToCSV } from '@/lib/export/xlsxExport';
 import { Exam, ExamStudent, Attempt } from '@/lib/types';
@@ -77,6 +79,17 @@ export default function ExamResultsPage({ params }: { params: Promise<{ examId: 
     // Subscribe to live attempts
     const unsubscribe = subscribeToExamAttempts(examId, (liveAttempts) => {
       setAttempts(liveAttempts);
+
+      // Auto-grade submitted attempts that have not yet had scores calculated
+      liveAttempts.forEach(async (att) => {
+        if ((att.status === 'SUBMITTED' || att.status === 'LOCKED') && !att.gradedAt) {
+          try {
+            await finishExamAttempt(att.id);
+          } catch (autoErr) {
+            console.warn('Auto-grade note for attempt', att.id, autoErr);
+          }
+        }
+      });
     });
 
     return () => unsubscribe();
@@ -159,43 +172,30 @@ export default function ExamResultsPage({ params }: { params: Promise<{ examId: 
   const handleRegrade = async (attemptId: string) => {
     setRegradingId(attemptId);
     try {
-      const res = await fetch('/api/exam/regrade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attemptId }),
-      });
-      const data = await res.json();
-      if (!data.success) {
-        alert(`Re-grade failed: ${data.message}`);
-      }
+      // Execute finishExamAttempt directly in the teacher's browser where Firebase Auth is active
+      await finishExamAttempt(attemptId);
       // The live subscription will auto-update the UI
-    } catch (e) {
-      console.error(e);
-      alert('Re-grade request failed. Please try again.');
+    } catch (e: unknown) {
+      console.error('Re-grade error:', e);
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      alert(`Re-grade failed: ${msg}`);
     } finally {
       setRegradingId(null);
     }
   };
 
-  const handleAllowRetake = async (attemptId: string, studentName: string) => {
+  const handleAllowRetake = async (attemptId: string, studentId: string, studentName: string) => {
     if (!confirm(`Are you sure you want to allow ${studentName} to retake the exam? This will clear their current attempt and recorded answers so they can start fresh.`)) {
       return;
     }
     setRetakingId(attemptId);
     try {
-      const res = await fetch('/api/exam/retake', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attemptId }),
-      });
-      const data = await res.json();
-      if (!data.success) {
-        alert(`Allow Retake failed: ${data.message}`);
-      }
+      await resetStudentAttempt(examId, studentId);
       // Live subscription will update attempts automatically
-    } catch (e) {
-      console.error(e);
-      alert('Allow Retake request failed. Please try again.');
+    } catch (e: unknown) {
+      console.error('Allow Retake error:', e);
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      alert(`Allow Retake failed: ${msg}`);
     } finally {
       setRetakingId(null);
     }
@@ -568,7 +568,7 @@ export default function ExamResultsPage({ params }: { params: Promise<{ examId: 
                           {/* Allow Retake button — resets the attempt so the student can re-take */}
                           {att && (
                             <button
-                              onClick={() => handleAllowRetake(att.id, st.name)}
+                              onClick={() => handleAllowRetake(att.id, st.studentId, st.name)}
                               disabled={retakingId === att.id}
                               title="Reset attempt and allow student to retake the exam"
                               className="flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-500/10 hover:bg-purple-500/25 text-purple-400 text-xs font-semibold transition-colors disabled:opacity-50"
