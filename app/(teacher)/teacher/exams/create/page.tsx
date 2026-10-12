@@ -35,7 +35,10 @@ export default function CreateExamPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user) {
+      alert('You must be logged in as a teacher to create an exam.');
+      return;
+    }
     setLoading(true);
 
     try {
@@ -61,9 +64,12 @@ export default function CreateExamPage() {
 
       // Advance directly to Step 2: Bulk Student Import
       router.push(`/teacher/exams/${exam.id}/students`);
-    } catch (err) {
-      console.error(err);
-      alert('Error creating exam. Please try again.');
+    } catch (err: any) {
+      console.error('Create exam error:', err);
+      const msg = err?.code === 'permission-denied'
+        ? 'Permission denied. Your session may have expired — please log out and log back in.'
+        : err?.message || 'Unknown error occurred.';
+      alert(`Error creating exam: ${msg}`);
     } finally {
       setLoading(false);
     }
