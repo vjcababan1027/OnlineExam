@@ -37,10 +37,19 @@ export default function BulkStudentImportPage({ params }: { params: Promise<{ ex
   useEffect(() => {
     async function loadData() {
       try {
-        const [ex, stList] = await Promise.all([
-          getExam(examId),
-          getExamStudents(examId),
-        ]);
+        // Retry loop: Firestore may not have replicated the newly-created exam
+        // document by the time we navigate here, so poll until it appears.
+        let ex = await getExam(examId);
+        if (!ex) {
+          const delays = [500, 1000, 2000, 3000, 4000];
+          for (const delay of delays) {
+            await new Promise((r) => setTimeout(r, delay));
+            ex = await getExam(examId);
+            if (ex) break;
+          }
+        }
+
+        const stList = await getExamStudents(examId);
         setExam(ex);
         setCurrentStudents(stList);
       } catch (e) {
